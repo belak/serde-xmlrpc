@@ -1,9 +1,8 @@
 //! Contains the different types of values understood by XML-RPC.
 
-use utils::{escape_xml, format_datetime};
-
 use base64::encode;
 use iso8601::DateTime;
+use xml::escape::{escape_str_pcdata as escape_xml};
 
 use std::collections::BTreeMap;
 use std::io::{self, Write};
@@ -19,7 +18,7 @@ use std::io::{self, Write};
 /// # Examples
 ///
 /// ```
-/// # use xmlrpc::{Value};
+/// # use simple_xmlrpc::{Value};
 /// let nothing = Value::Nil;
 ///
 /// let person = Value::Struct(vec![
@@ -130,7 +129,7 @@ impl Value {
                 writeln!(
                     fmt,
                     "<dateTime.iso8601>{}</dateTime.iso8601>",
-                    format_datetime(&date_time)
+                    date_time
                 )?;
             }
             Value::Base64(ref data) => {

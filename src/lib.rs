@@ -1,29 +1,22 @@
-//! An XML-RPC implementation in Rust.
-//!
-//! The `xmlrpc` crate provides a minimal implementation of the [XML-RPC specification].
-//!
-//! [XML-RPC specification]: http://xmlrpc.scripting.com/spec.html
-
-#![doc(html_root_url = "https://docs.rs/xmlrpc/0.13.1")]
-#![warn(missing_debug_implementations)]
-#![warn(rust_2018_idioms)]
-#![warn(missing_docs)]
-
-extern crate base64;
-extern crate iso8601;
-extern crate xml;
-
 mod error;
 mod parser;
 mod request;
-mod transport;
-mod utils;
 mod value;
 
-pub use error::{Error, Fault};
-pub use request::Request;
-pub use transport::Transport;
-pub use value::{Index, Value};
+/// Encodes a request to bytes.
+pub fn encode_request(name: &str, args: &[Value]) -> Result<Vec<u8>> {
+    let mut ret = Vec::new();
 
-#[cfg(feature = "http")]
-pub use transport::http;
+    let req = request::Request::new(name, args);
+    req.write_as_xml(&mut ret)?;
+
+    Ok(ret)
+}
+
+/// Parses a response.
+pub fn parse_response(data: &str) -> Result<Value> {
+    parser::Parser::new(&mut data.as_bytes())?.parse_response()
+}
+
+pub use error::{Error, Result};
+pub use value::Value;

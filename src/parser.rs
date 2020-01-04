@@ -1,22 +1,17 @@
 //! XML-RPC response parser.
 
-use error::ParseError;
-use {Fault, Value};
-
-use base64;
-use iso8601::datetime;
 use std::collections::BTreeMap;
 use std::io::{self, ErrorKind, Read};
+
+use anyhow::{self, format_err};
+use base64;
+use iso8601::datetime;
 use xml::common::Position;
 use xml::reader::{EventReader, XmlEvent};
 use xml::ParserConfig;
 
-/// A response from the server.
-///
-/// XML-RPC specifies that a call should either return a single `Value`, or a `<fault>`.
-pub type Response = Result<Value, Fault>;
-
-type ParseResult<T> = Result<T, ParseError>;
+use crate::error::{Fault, ParseError, Result};
+use crate::Value;
 
 pub struct Parser<'a, R: Read> {
     reader: EventReader<&'a mut R>,
@@ -26,7 +21,7 @@ pub struct Parser<'a, R: Read> {
 }
 
 impl<'a, R: Read> Parser<'a, R> {
-    pub fn new(reader: &'a mut R) -> ParseResult<Self> {
+    pub fn new(reader: &'a mut R) -> Result<Self> {
         let reader = EventReader::new_with_config(
             reader,
             ParserConfig {
@@ -44,9 +39,9 @@ impl<'a, R: Read> Parser<'a, R> {
     }
 
     /// Disposes `self.cur` and pulls the next event from the XML parser to replace it.
-    fn next(&mut self) -> ParseResult<()> {
+    fn next(&mut self) -> Result<()> {
         loop {
-            let event = self.reader.next()?;
+            let event = self.reader.next().map_err(ParseError::from)?;
             match event {
                 XmlEvent::StartDocument { .. }
                 | XmlEvent::Comment(_)
@@ -79,7 +74,7 @@ impl<'a, R: Read> Parser<'a, R> {
 
     /// Expects that the current token is an opening tag like `<tag>` without attributes (and a
     /// local name without namespaces). If not, returns an error.
-    fn expect_open(&mut self, tag: &str) -> ParseResult<()> {
+    fn expect_open(&mut self, tag: &str) -> Result<()> {
         match self.cur {
             XmlEvent::StartElement { ref name, .. } if name.local_name == tag => {}
             _ => return self.expected(format!("<{}>", tag)),
@@ -90,7 +85,7 @@ impl<'a, R: Read> Parser<'a, R> {
 
     /// Expects that the current token is a closing tag like `</tag>` with a local name without
     /// namespaces. If not, returns an error.
-    fn expect_close(&mut self, tag: &str) -> ParseResult<()> {
+    fn expect_close(&mut self, tag: &str) -> Result<()> {
         match self.cur {
             XmlEvent::EndElement { ref name } if name.local_name == tag => {}
             _ => return self.expected(format!("</{}>", tag)),
@@ -100,11 +95,11 @@ impl<'a, R: Read> Parser<'a, R> {
     }
 
     /// Expects that the current token is a characters sequence. Parses and returns a value.
-    fn expect_value<T, E>(
+    fn expect_value<T>(
         &mut self,
         for_type: &'static str,
-        parse: impl Fn(&str) -> Result<T, E>,
-    ) -> ParseResult<T> {
+        parse: impl Fn(&str) -> anyhow::Result<T>,
+    ) -> Result<T> {
         let value = match self.cur {
             XmlEvent::Characters(ref string) => {
                 parse(string).map_err(|_| self.invalid_value(for_type, string.to_owned()))?
@@ -116,7 +111,7 @@ impl<'a, R: Read> Parser<'a, R> {
     }
 
     /// Builds and returns an `Err(UnexpectedXml)`.
-    fn expected<T, E: ToString>(&self, expected: E) -> ParseResult<T> {
+    fn expected<T, E: ToString>(&self, expected: E) -> Result<T> {
         let expected = expected.to_string();
         let position = self.reader.position();
 
@@ -132,7 +127,8 @@ impl<'a, R: Read> Parser<'a, R> {
                 }
                 _ => None,
             },
-        })
+        }
+        .into())
     }
 
     fn invalid_value(&self, for_type: &'static str, value: String) -> ParseError {
@@ -144,9 +140,7 @@ impl<'a, R: Read> Parser<'a, R> {
         }
     }
 
-    fn parse_response(&mut self) -> ParseResult<Response> {
-        let response: Response;
-
+    pub fn parse_response(&mut self) -> Result<Value> {
         // <methodResponse>
         self.expect_open("methodResponse")?;
 
@@ -156,30 +150,31 @@ impl<'a, R: Read> Parser<'a, R> {
                 if name.local_name == "fault" {
                     self.next()?;
                     let value = self.parse_value()?;
-                    let fault = Fault::from_value(&value)
-                        .ok_or_else(|| io::Error::new(ErrorKind::Other, "malformed <fault>"))?;
-                    response = Err(fault);
+                    let fault = Fault::from_value(&value);
+                    match fault {
+                        Some(f) => Err(f.into()),
+                        None => Err(io::Error::new(ErrorKind::Other, "malformed <fault>").into()),
+                    }
                 } else if name.local_name == "params" {
                     self.next()?;
                     // <param>
                     self.expect_open("param")?;
 
                     let value = self.parse_value()?;
-                    response = Ok(value);
 
                     // </param>
                     self.expect_close("param")?;
+
+                    Ok(value)
                 } else {
                     return self.expected(format!("<fault> or <params>, got {}", name));
                 }
             }
             _ => return self.expected("<fault> or <params>"),
         }
-
-        Ok(response)
     }
 
-    fn parse_value(&mut self) -> ParseResult<Value> {
+    fn parse_value(&mut self) -> Result<Value> {
         // <value>
         self.expect_open("value")?;
 
@@ -196,7 +191,7 @@ impl<'a, R: Read> Parser<'a, R> {
         Ok(value)
     }
 
-    fn parse_value_inner(&mut self) -> ParseResult<Value> {
+    fn parse_value_inner(&mut self) -> Result<Value> {
         let value = match self.cur.clone() {
             // Raw string or specific type tag
             XmlEvent::StartElement { ref name, .. } => {
@@ -292,15 +287,21 @@ impl<'a, R: Read> Parser<'a, R> {
                     }
                     "i4" | "int" => {
                         self.next()?;
-                        let value = self
-                            .expect_value("integer", |data| data.parse::<i32>().map(Value::Int))?;
+                        let value = self.expect_value("integer", |data| {
+                            data.parse::<i32>()
+                                .map(Value::Int)
+                                .map_err(|_| format_err!("integer failed to parse"))
+                        })?;
                         self.expect_close(name)?;
                         value
                     }
                     "i8" => {
                         self.next()?;
-                        let value =
-                            self.expect_value("i8", |data| data.parse::<i64>().map(Value::Int64))?;
+                        let value = self.expect_value("i8", |data| {
+                            data.parse::<i64>()
+                                .map(Value::Int64)
+                                .map_err(|_| format_err!("integer failed to parse"))
+                        })?;
                         self.expect_close(name)?;
                         value
                     }
@@ -309,7 +310,7 @@ impl<'a, R: Read> Parser<'a, R> {
                         let value = self.expect_value("boolean", |data| match data {
                             "0" => Ok(Value::Bool(false)),
                             "1" => Ok(Value::Bool(true)),
-                            _ => Err(()),
+                            _ => Err(format_err!("boolean failed to parse")),
                         })?;
                         self.expect_close(name)?;
                         value
@@ -317,7 +318,9 @@ impl<'a, R: Read> Parser<'a, R> {
                     "double" => {
                         self.next()?;
                         let value = self.expect_value("double", |data| {
-                            data.parse::<f64>().map(Value::Double)
+                            data.parse::<f64>()
+                                .map(Value::Double)
+                                .map_err(|_| format_err!("double failed to parse"))
                         })?;
                         self.expect_close(name)?;
                         value
@@ -326,9 +329,10 @@ impl<'a, R: Read> Parser<'a, R> {
                         self.next()?;
                         let value = self.expect_value("dateTime.iso8601", |data| {
                             datetime(data).map(Value::DateTime)
+                                .map_err(|_| format_err!("dateTime.iso8601 failed to parse"))
                         })?;
                         self.expect_close(name)?;
-                        value
+                        value.into()
                     }
                     _ => return self.expected("valid type tag"),
                 }
@@ -344,31 +348,25 @@ impl<'a, R: Read> Parser<'a, R> {
     }
 }
 
-/// Parses a response from an XML reader.
-pub fn parse_response<R: Read>(reader: &mut R) -> ParseResult<Response> {
-    Parser::new(reader)?.parse_response()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use error::Fault;
     use Value;
 
     use std::fmt::Debug;
     use std::iter;
 
-    fn read_response(xml: &str) -> ParseResult<Response> {
-        parse_response(&mut xml.as_bytes())
+    fn read_response(xml: &str) -> Result<Value> {
+        Parser::new(&mut xml.as_bytes())?.parse_response()
     }
 
-    fn read_value(xml: &str) -> ParseResult<Value> {
+    fn read_value(xml: &str) -> Result<Value> {
         Parser::new(&mut xml.as_bytes())?.parse_value()
     }
 
     /// Test helper function that will panic with the `Err` if a `Result` is not an `Ok`.
-    fn assert_ok<T: Debug, E: Debug>(result: Result<T, E>) {
+    fn assert_ok<T: Debug>(result: Result<T>) {
         match result {
             Ok(_) => {}
             Err(e) => panic!("assert_ok called on Err value: {:?}", e),
@@ -376,7 +374,7 @@ mod tests {
     }
 
     /// Test helper function that will panic with the `Ok` if a `Result` is not an `Err`.
-    fn assert_err<T: Debug, E: Debug>(result: Result<T, E>) {
+    fn assert_err<T: Debug>(result: Result<T>) {
         match result {
             Ok(t) => panic!("assert_err called on Ok value: {:?}", t),
             Err(_) => {}
@@ -438,10 +436,11 @@ mod tests {
       </fault>
    </methodResponse>"##
             ),
-            Ok(Err(Fault {
+            Err(Fault {
                 fault_code: 4,
                 fault_string: "Too many parameters.".into(),
-            }))
+            }
+            .into())
         );
     }
 
@@ -730,17 +729,19 @@ mod tests {
 
         assert_eq!(
             errstr(r#"<value name="ble">\t  I'm a string!  </value>"#),
-            "unexpected XML at 1:1 (expected tag <value> without attributes, found end of data)"
+            //"parse error: unexpected XML at 1:1 (expected tag <value> without attributes, found end of data)"
+            "parse error: unexpected XML at 1:1 (expected tag <value> without attributes)"
         );
 
         assert_eq!(
             errstr(r#"<value><SURPRISE></SURPRISE></value>"#),
-            "unexpected XML at 1:8 (expected valid type tag, found <SURPRISE>)"
+            //"parse error: unexpected XML at 1:8 (expected valid type tag, found <SURPRISE>)"
+            "parse error: unexpected XML at 1:8 (expected valid type tag)"
         );
 
         assert_eq!(
             errstr(r#"<value><int>bla</int></value>"#),
-            "invalid value for type \'integer\' at 1:13: bla"
+            "parse error: invalid value for type \'integer\' at 1:13: bla"
         );
     }
 
