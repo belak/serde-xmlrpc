@@ -71,8 +71,8 @@ pub enum ParseError {
     #[error("tag not found: {0}")]
     TagNotFound(String),
 
-    #[error("generic error: {0}")]
-    Generic(String),
+    #[error("fault: {0}")]
+    ParseFaultError(String),
 }
 
 /// Error while encoding XML.
@@ -114,7 +114,9 @@ impl TryFrom<Value> for Fault {
                     (Some(&Value::Int(fault_code)), Some(&Value::String(ref fault_string))) => {
                         if map.len() != 2 {
                             // incorrect field count
-                            Err(ParseError::Generic("extra fields returned in fault".into()))
+                            Err(ParseError::ParseFaultError(
+                                "extra fields returned in fault".into(),
+                            ))
                         } else {
                             Ok(Fault {
                                 fault_code,
@@ -122,12 +124,12 @@ impl TryFrom<Value> for Fault {
                             })
                         }
                     }
-                    _ => Err(ParseError::Generic(
-                        "fault missing either faultCode or faultString".into(),
+                    _ => Err(ParseError::ParseFaultError(
+                        "missing either faultCode or faultString".into(),
                     )),
                 }
             }
-            _ => Err(ParseError::Generic("fault expected struct".into())),
+            _ => Err(ParseError::ParseFaultError("expected struct".into())),
         }
     }
 }
