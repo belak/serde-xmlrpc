@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::convert::TryFrom;
 use std::num::{ParseFloatError, ParseIntError};
 use std::result;
 use std::string::FromUtf8Error;
@@ -27,13 +28,13 @@ pub enum Error {
 
     /// The server returned a `<fault>` response, indicating that the execution of the call
     /// encountered a problem (for example, an invalid (number of) arguments was passed).
-    #[error("server fault: {} ({})", .0.fault_string, .0.fault_code)]
+    #[error("server fault: {0}")]
     Fault(#[from] Fault),
 }
 
+/// Error while parsing XML.
 #[derive(ThisError, Debug)]
 pub enum ParseError {
-    /// Error while parsing (malformed?) XML.
     #[error("malformed XML: {0}")]
     XmlError(#[from] XmlError),
 
@@ -45,6 +46,12 @@ pub enum ParseError {
 
     #[error("malformed XML: {0}")]
     Base64DecodeError(#[from] DecodeError),
+
+    #[error("malformed XML: {0}")]
+    DateTimeDecodeError(String),
+
+    #[error("malformed XML: invalid boolean value: {0}")]
+    BooleanDecodeError(String),
 
     #[error("malformed UTF-8: {0}")]
     Utf8Error(#[from] FromUtf8Error),
@@ -68,12 +75,12 @@ pub enum ParseError {
     Generic(String),
 }
 
+/// Error while encoding XML.
 #[derive(ThisError, Debug)]
 pub enum EncodingError {
     #[error("malformed UTF-8: {0}")]
     Utf8Error(#[from] FromUtf8Error),
 
-    /// Error while parsing (malformed?) XML.
     #[error("XML error: {0}")]
     XmlError(#[from] XmlError),
 }
@@ -93,45 +100,50 @@ pub struct Fault {
     pub fault_string: String,
 }
 
-impl Fault {
-    /// Creates a `Fault` from a `Value`.
-    ///
-    /// The `Value` must be a `Value::Struct` with a `faultCode` and `faultString` field (and no
-    /// other fields).
-    ///
-    /// Returns `None` if the value isn't a valid `Fault`.
-    pub fn from_value(value: &Value) -> Option<Self> {
-        match *value {
-            Value::Struct(ref map) => {
-                if map.len() != 2 {
-                    // incorrect field count
-                    return None;
-                }
+/// Creates a `Fault` from a `Value`.
+///
+/// The `Value` must be a `Value::Struct` with a `faultCode` and `faultString` field (and no
+/// other fields).
+impl TryFrom<Value> for Fault {
+    type Error = ParseError;
 
+    fn try_from(value: Value) -> std::result::Result<Self, Self::Error> {
+        match value {
+            Value::Struct(ref map) => {
                 match (map.get("faultCode"), map.get("faultString")) {
                     (Some(&Value::Int(fault_code)), Some(&Value::String(ref fault_string))) => {
-                        Some(Fault {
-                            fault_code,
-                            fault_string: fault_string.to_string(),
-                        })
+                        if map.len() != 2 {
+                            // incorrect field count
+                            Err(ParseError::Generic("extra fields returned in fault".into()))
+                        } else {
+                            Ok(Fault {
+                                fault_code,
+                                fault_string: fault_string.to_string(),
+                            })
+                        }
                     }
-                    _ => None,
+                    _ => Err(ParseError::Generic(
+                        "fault missing either faultCode or faultString".into(),
+                    )),
                 }
             }
-            _ => None,
+            _ => Err(ParseError::Generic("fault expected struct".into())),
         }
     }
+}
 
-    /// Turns this `Fault` into an equivalent `Value`.
-    ///
-    /// The returned value can be parsed back into a `Fault` using `Fault::from_value` or returned
-    /// as a `<fault>` error response by serializing it into a `<fault></fault>` tag.
-    pub fn to_value(&self) -> Value {
+/// Turns this `Fault` into an equivalent `Value`.
+///
+/// The returned value can be parsed back into a `Fault` using `Fault::try_from`
+/// or returned as a `<fault>` error response by serializing it into a
+/// `<fault></fault>` tag.
+impl From<&Fault> for Value {
+    fn from(other: &Fault) -> Self {
         let mut map = BTreeMap::new();
-        map.insert("faultCode".to_string(), Value::from(self.fault_code));
+        map.insert("faultCode".to_string(), Value::from(other.fault_code));
         map.insert(
             "faultString".to_string(),
-            Value::from(self.fault_string.as_ref()),
+            Value::from(other.fault_string.clone()),
         );
 
         Value::Struct(map)
@@ -151,7 +163,7 @@ mod tests {
             fault_string: "The Bald Lazy House Jumps Over The Hyperactive Kitten".to_string(),
         };
 
-        assert_eq!(Fault::from_value(&input.to_value()), Some(input));
+        assert_eq!(Fault::try_from(Value::from(&input)).unwrap(), input);
     }
 
     #[test]

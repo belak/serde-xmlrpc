@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::convert::TryFrom;
 
 use base64::{decode as decode_base64, encode as encode_base64};
 use iso8601::{datetime as parse_datetime, DateTime};
@@ -197,7 +198,7 @@ impl Value {
         mut reader: &mut Reader<&[u8]>,
         mut buf: &mut Vec<u8>,
     ) -> Result<Self> {
-        let ret: Self = match reader.read_event(&mut buf) {
+        let ret = match reader.read_event(&mut buf) {
             // If we got a start tag, we need to handle each of the value types.
             Ok(Event::Start(ref e)) => match e.name() {
                 b"fault" => {
@@ -206,10 +207,10 @@ impl Value {
                     reader
                         .read_to_end(b"fault", &mut buf)
                         .map_err(ParseError::from)?;
-                    match Fault::from_value(&val) {
-                        Some(f) => Err(Error::from(f))?,
-                        None => Err(ParseError::Generic("invalid fault".into()))?,
-                    }
+
+                    let f = Fault::try_from(val)?;
+                    let e = Error::from(f);
+                    Err(e)
                 }
                 b"params" => {
                     reader.expect_tag(b"param", &mut buf)?;
@@ -221,7 +222,7 @@ impl Value {
                     reader
                         .read_to_end(b"params", &mut buf)
                         .map_err(ParseError::from)?;
-                    val
+                    Ok(val)
                 }
                 _ => {
                     return Err(ParseError::UnexpectedTag(
@@ -244,7 +245,7 @@ impl Value {
             .read_to_end(b"methodResponse", &mut buf)
             .map_err(ParseError::from)?;
 
-        Ok(ret)
+        ret
     }
 
     pub(crate) fn read_value_from_reader(
@@ -340,7 +341,7 @@ impl Value {
         match val {
             "1" => Ok(Value::Bool(true)),
             "0" => Ok(Value::Bool(false)),
-            _ => Err(ParseError::Generic(format!("invalid boolean value: {}", val)).into()),
+            _ => Err(ParseError::BooleanDecodeError(val.into()).into()),
         }
     }
 
@@ -372,7 +373,7 @@ impl Value {
         let text = reader.read_text(end, buf).map_err(ParseError::from)?;
         Ok(parse_datetime(text.as_ref())
             .map(Self::from)
-            .map_err(|e| ParseError::Generic(e))?)
+            .map_err(|e| ParseError::DateTimeDecodeError(e))?)
     }
 
     fn read_struct_from_reader<K: AsRef<[u8]>>(
@@ -516,8 +517,8 @@ impl From<String> for Value {
     }
 }
 
-impl<'a> From<&'a str> for Value {
-    fn from(other: &'a str) -> Self {
+impl From<&str> for Value {
+    fn from(other: &str) -> Self {
         Value::String(other.to_string())
     }
 }
