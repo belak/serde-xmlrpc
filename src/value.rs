@@ -234,11 +234,13 @@ impl Value {
             },
 
             // Possible error states
-            Ok(Event::Eof) => return Err(ParseError::UnexpectedEOF("one of fault|params".into()))?,
+            Ok(Event::Eof) => {
+                return Err(ParseError::UnexpectedEOF("one of fault|params".into()).into())
+            }
 
-            Err(e) => return Err(ParseError::from(e))?,
+            Err(e) => return Err(ParseError::from(e).into()),
 
-            _ => return Err(ParseError::UnexpectedEvent("one of fault|params".into()))?,
+            _ => return Err(ParseError::UnexpectedEvent("one of fault|params".into()).into()),
         };
 
         reader
@@ -287,7 +289,7 @@ impl Value {
                     return Err(ParseError::UnexpectedTag(
                         String::from_utf8_lossy(e.name()).into(),
                         "one of i4|int|i8|boolean|string|double|dateTime.iso8601|base64|struct|array|nil".into(),
-                    ))?;
+                    ).into());
                 }
             },
 
@@ -295,14 +297,16 @@ impl Value {
             Ok(Event::Eof) => return Err(ParseError::UnexpectedEOF(
                 "one of i4|int|i8|boolean|string|double|dateTime.iso8601|base64|struct|array|nil"
                     .into(),
-            ))?,
+            )
+            .into()),
 
-            Err(e) => return Err(ParseError::from(e))?,
+            Err(e) => return Err(ParseError::from(e).into()),
 
             _ => return Err(ParseError::UnexpectedEvent(
                 "one of i4|int|i8|boolean|string|double|dateTime.iso8601|base64|struct|array|nil"
                     .into(),
-            ))?,
+            )
+            .into()),
         };
 
         // Make sure we consume the closing value tag.
@@ -373,7 +377,7 @@ impl Value {
         let text = reader.read_text(end, buf).map_err(ParseError::from)?;
         Ok(parse_datetime(text.as_ref())
             .map(Self::from)
-            .map_err(|e| ParseError::DateTimeDecodeError(e))?)
+            .map_err(ParseError::DateTimeDecodeError)?)
     }
 
     fn read_struct_from_reader<K: AsRef<[u8]>>(
@@ -411,16 +415,17 @@ impl Value {
                         return Err(ParseError::UnexpectedTag(
                             String::from_utf8_lossy(e.name()).into(),
                             "member".into(),
-                        ))?;
+                        )
+                        .into());
                     }
                 },
 
                 // Possible error states
-                Ok(Event::Eof) => return Err(ParseError::UnexpectedEOF("member".into()))?,
+                Ok(Event::Eof) => return Err(ParseError::UnexpectedEOF("member".into()).into()),
 
-                Err(e) => return Err(ParseError::from(e))?,
+                Err(e) => return Err(ParseError::from(e).into()),
 
-                _ => return Err(ParseError::UnexpectedEvent("member".into()))?,
+                _ => return Err(ParseError::UnexpectedEvent("member".into()).into()),
             }
         }
 
@@ -463,16 +468,17 @@ impl Value {
                         return Err(ParseError::UnexpectedTag(
                             String::from_utf8_lossy(e.name()).into(),
                             "value".into(),
-                        ))?;
+                        )
+                        .into());
                     }
                 },
 
                 // Possible error states
-                Ok(Event::Eof) => return Err(ParseError::UnexpectedEOF("value".into()))?,
+                Ok(Event::Eof) => return Err(ParseError::UnexpectedEOF("value".into()).into()),
 
-                Err(e) => return Err(ParseError::from(e))?,
+                Err(e) => return Err(ParseError::from(e).into()),
 
-                _ => return Err(ParseError::UnexpectedEvent("value".into()))?,
+                _ => return Err(ParseError::UnexpectedEvent("value".into()).into()),
             }
         }
 
