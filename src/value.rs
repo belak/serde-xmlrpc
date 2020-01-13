@@ -493,6 +493,8 @@ impl Value {
     }
 }
 
+// Conversions into Value
+
 impl From<i32> for Value {
     fn from(other: i32) -> Self {
         Value::Int(other)

@@ -85,10 +85,17 @@ mod tests {
         );
 
         assert_eq!(
-            parse_value("<value><int>42</int></value>")
+            parse_value("<value><int>-42</int></value>")
                 .unwrap()
                 .as_i32(),
-            Some(42)
+            Some(-42)
+        );
+
+        assert_eq!(
+            parse_value("<value><int>2147483647</int></value>")
+                .unwrap()
+                .as_i32(),
+            Some(2147483647)
         );
     }
 
@@ -98,6 +105,13 @@ mod tests {
         assert_eq!(
             parse_value("<value><i8>42</i8></value>").unwrap().as_i64(),
             Some(42)
+        );
+
+        assert_eq!(
+            parse_value("<value><i8>9223372036854775807</i8></value>")
+                .unwrap()
+                .as_i64(),
+            Some(9223372036854775807)
         );
     }
 
@@ -123,15 +137,17 @@ mod tests {
     #[test]
     fn parse_string_values() {
         assert_eq!(
-            parse_value("<value>hello</value>").unwrap().as_str(),
-            Some("hello")
-        );
-        assert_eq!(
-            parse_value("<value><string>world</string></value>")
+            parse_value("<value><string>hello</string></value>")
                 .unwrap()
                 .as_str(),
+            Some("hello")
+        );
+
+        assert_eq!(
+            parse_value("<value>world</value>").unwrap().as_str(),
             Some("world")
         );
+
         assert_eq!(parse_value("<value />").unwrap().as_str(), Some(""));
     }
 
@@ -155,6 +171,18 @@ mod tests {
                 .unwrap()
                 .as_f64(),
             Some(42.0)
+        );
+        assert_eq!(
+            parse_value("<value><double>3.14</double></value>")
+                .unwrap()
+                .as_f64(),
+            Some(3.14)
+        );
+        assert_eq!(
+            parse_value("<value><double>-3.14</double></value>")
+                .unwrap()
+                .as_f64(),
+            Some(-3.14)
         );
     }
 
