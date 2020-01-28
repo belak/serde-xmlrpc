@@ -1,12 +1,13 @@
 [package]
 name = "simple-xmlrpc"
-description = "A simple XML-RPC implementation for Rust"
+description = "A simple, no nonsense, XML-RPC implementation for Rust"
 license = "MIT"
 version = "0.1.0"
 authors = ["Kaleb Elwert <belak@coded.io>"]
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+documentation = "https://docs.rs/simple-xmlrpc"
+repository = "https://github.com/belak/simple-xmlrpc-rs"
+readme = "README.md"
 
 [dependencies]
 anyhow = "1.0"
