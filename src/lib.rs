@@ -1,42 +1,61 @@
-use quick_xml::{Reader, Writer};
+use quick_xml::Writer;
 
 mod error;
-mod utils;
+mod util;
 mod value;
 
-use utils::{ReaderExt, WriterExt};
+use util::{ValueSerializer, WriterExt};
 
-pub use crate::error::{Error, Result};
-pub use crate::value::Value;
+pub use error::{Error, Result};
+pub use value::Value;
 
-pub fn parse_response(data: &str) -> Result<Value> {
-    let mut reader = Reader::from_str(data);
-    reader.expand_empty_elements(true);
-    reader.trim_text(true);
-
-    let mut buf = Vec::new();
-
-    // We expect a value tag first, followed by a value. Note that the inner
-    // read will properly handle ensuring we get a closing value tag.
-    reader.expect_tag(b"methodResponse", &mut buf)?;
-
-    Value::read_response_from_reader(&mut reader, &mut buf)
+pub fn response_to_string<T>() -> Result<String> {
+    unimplemented!();
 }
 
-pub fn parse_value(data: &str) -> Result<Value> {
-    let mut reader = Reader::from_str(data);
-    reader.expand_empty_elements(true);
-    reader.trim_text(true);
-
-    let mut buf = Vec::new();
-
-    // We expect a value tag first, followed by a value. Note that the inner
-    // read will properly handle ensuring we get a closing value tag.
-    reader.expect_tag(b"value", &mut buf)?;
-
-    Value::read_value_from_reader(&mut reader, &mut buf)
+pub fn response_from_str<T>(s: &str) -> Result<T>
+where
+    T: serde::de::DeserializeOwned,
+{
+    unimplemented!();
 }
 
+pub fn request_to_string<T>(name: &str, args: &[T]) -> Result<String>
+where
+    T: serde::Serialize,
+{
+    let mut writer = Writer::new(Vec::new());
+
+    writer
+        .write(br#"<?xml version="1.0" encoding="utf-8"?>"#)
+        .map_err(error::EncodingError::from)?;
+
+    writer.write_start_tag(b"methodCall")?;
+    writer.write_tag(b"methodName", name)?;
+
+    writer.write_start_tag(b"params")?;
+    for value in args {
+        writer.write_start_tag(b"param")?;
+
+        let serializer = ValueSerializer::new(&mut writer);
+        value.serialize(serializer)?;
+
+        writer.write_end_tag(b"param")?;
+    }
+    writer.write_end_tag(b"params")?;
+    writer.write_end_tag(b"methodCall")?;
+
+    Ok(String::from_utf8(writer.into_inner()).map_err(error::EncodingError::from)?)
+}
+
+pub fn request_from_str<T>(s: &str) -> Result<T>
+where
+    T: serde::de::DeserializeOwned,
+{
+    unimplemented!();
+}
+
+/*
 pub fn stringify_request(name: &str, args: &[Value]) -> Result<String> {
     let mut buf = Vec::new();
     let mut writer = Writer::new(&mut buf);
@@ -63,6 +82,7 @@ pub fn stringify_request(name: &str, args: &[Value]) -> Result<String> {
 
     Ok(String::from_utf8(buf).map_err(error::EncodingError::from)?)
 }
+*/
 
 #[cfg(test)]
 mod tests {
@@ -71,11 +91,12 @@ mod tests {
     #[test]
     fn test_stringify_request() {
         assert_eq!(
-            stringify_request("hello world", &[]).unwrap(),
+            request_to_string::<Value>("hello world", &[]).unwrap(),
             r#"<?xml version="1.0" encoding="utf-8"?><methodCall><methodName>hello world</methodName><params></params></methodCall>"#.to_owned()
         )
     }
 
+    /*
     /// A 32-bit signed integer (`<i4>` or `<int>`).
     #[test]
     fn parse_int_values() {
@@ -256,4 +277,5 @@ mod tests {
             }
         }
     }
+    */
 }

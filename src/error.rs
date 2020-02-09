@@ -30,6 +30,30 @@ pub enum Error {
     /// encountered a problem (for example, an invalid (number of) arguments was passed).
     #[error("server fault: {0}")]
     Fault(#[from] Fault),
+
+    #[error("serde decoding error: {0}")]
+    DecodeError(String),
+
+    #[error("serde encoding error: {0}")]
+    EncodeError(String),
+}
+
+impl serde::de::Error for Error {
+    fn custom<T>(msg: T) -> Self
+    where
+        T: std::fmt::Display,
+    {
+        Error::DecodeError(msg.to_string())
+    }
+}
+
+impl serde::ser::Error for Error {
+    fn custom<T>(msg: T) -> Self
+    where
+        T: std::fmt::Display,
+    {
+        Error::EncodeError(msg.to_string())
+    }
 }
 
 /// Error while parsing XML.
@@ -70,6 +94,9 @@ pub enum ParseError {
 
     #[error("tag not found: {0}")]
     TagNotFound(String),
+
+    #[error("key must be convertable to a string")]
+    KeyMustBeString,
 
     #[error("fault: {0}")]
     ParseFaultError(String),
