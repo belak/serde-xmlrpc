@@ -33,6 +33,13 @@ where
         ret.reader.expect_tag(b"value", &mut ret.buf)?;
         Ok(ret)
     }
+
+    pub fn into_inner(self) -> Reader<B>
+    where
+        B: std::io::BufRead,
+    {
+        self.reader
+    }
 }
 
 impl<'de, 'a, B> serde::Deserializer<'de> for &'a mut Deserializer<B>

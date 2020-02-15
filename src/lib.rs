@@ -1,4 +1,5 @@
-use quick_xml::{Reader, Writer};
+use quick_xml::{events::Event, Reader, Writer};
+use serde::Deserialize;
 use serde_transcode::transcode;
 
 mod error;
@@ -7,14 +8,46 @@ mod value;
 
 use util::{ValueDeserializer, ValueSerializer, WriterExt};
 
-pub use error::{Error, Result};
+pub use error::{Error, Fault, Result};
 pub use value::Value;
 
-pub fn response_from_str<T>(s: &str) -> Result<T>
+pub fn response_from_str<T>(input: &str) -> Result<T>
 where
     T: serde::de::DeserializeOwned,
 {
-    unimplemented!();
+    let mut reader = Reader::from_str(input);
+    reader.expand_empty_elements(true);
+    reader.trim_text(true);
+
+    // Check the first event. This will determine if we're loading a Fault or a
+    // Value.
+    let mut buf = Vec::new();
+    match reader
+        .read_event(&mut buf)
+        .map_err(error::ParseError::from)?
+    {
+        Event::Start(e) if e.name() == b"methodResponse" => {
+            let mut deserializer = ValueDeserializer::new(reader)?;
+            T::deserialize(&mut deserializer)
+        }
+        Event::Start(e) if e.name() == b"fault" => {
+            // The inner portion of a fault is just a Value tag, so we
+            // deserialize it from a value.
+            let mut deserializer = ValueDeserializer::new(reader)?;
+            let fault: Fault = Fault::deserialize(&mut deserializer)?;
+
+            // Pull the reader back out so we can verify the end tag.
+            let mut reader = deserializer.into_inner();
+
+            let mut buf = Vec::new();
+            reader
+                .read_to_end(e.name(), &mut buf)
+                .map_err(error::ParseError::from)?;
+
+            Err(fault.into())
+        }
+        e => Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
+    }
 }
 
 pub fn request_to_string(name: &str, args: Vec<Value>) -> Result<String> {
@@ -63,35 +96,6 @@ where
     transcode(d, s)?;
     Ok(String::from_utf8(writer.into_inner()).map_err(error::EncodingError::from)?)
 }
-
-/*
-pub fn stringify_request(name: &str, args: &[Value]) -> Result<String> {
-    let mut buf = Vec::new();
-    let mut writer = Writer::new(&mut buf);
-
-    writer
-        .write(br#"<?xml version="1.0" encoding="utf-8"?>"#)
-        .map_err(error::EncodingError::from)?;
-
-    writer.write_start_tag(b"methodCall")?;
-    writer.write_tag(b"methodName", name)?;
-
-    writer.write_start_tag(b"params")?;
-    for value in args {
-        writer.write_start_tag(b"param")?;
-
-        writer
-            .write(value.stringify()?.as_ref())
-            .map_err(error::EncodingError::from)?;
-
-        writer.write_end_tag(b"param")?;
-    }
-    writer.write_end_tag(b"params")?;
-    writer.write_end_tag(b"methodCall")?;
-
-    Ok(String::from_utf8(buf).map_err(error::EncodingError::from)?)
-}
-*/
 
 #[cfg(test)]
 mod tests {

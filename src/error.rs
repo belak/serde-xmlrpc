@@ -6,6 +6,7 @@ use std::string::FromUtf8Error;
 
 use base64::DecodeError;
 use quick_xml::Error as XmlError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error as ThisError;
 
 use crate::Value;
@@ -118,65 +119,14 @@ pub type Result<T> = result::Result<T, Error>;
 ///
 /// The XML-RPC specification requires that a `<faultCode>` and `<faultString>` is returned in the
 /// `<fault>` case, further describing the error.
-#[derive(ThisError, Debug, PartialEq, Eq)]
+#[derive(ThisError, Deserialize, Serialize, Debug, PartialEq, Eq)]
 #[error("{fault_string} ({fault_code})")]
+#[serde(rename_all = "camelCase")]
 pub struct Fault {
     /// An application-specific error code.
     pub fault_code: i32,
     /// Human-readable error description.
     pub fault_string: String,
-}
-
-/// Creates a `Fault` from a `Value`.
-///
-/// The `Value` must be a `Value::Struct` with a `faultCode` and `faultString` field (and no
-/// other fields).
-impl TryFrom<Value> for Fault {
-    type Error = ParseError;
-
-    fn try_from(value: Value) -> std::result::Result<Self, Self::Error> {
-        match value {
-            Value::Struct(ref map) => {
-                match (map.get("faultCode"), map.get("faultString")) {
-                    (Some(&Value::Int(fault_code)), Some(&Value::String(ref fault_string))) => {
-                        if map.len() != 2 {
-                            // incorrect field count
-                            Err(ParseError::ParseFaultError(
-                                "extra fields returned in fault".into(),
-                            ))
-                        } else {
-                            Ok(Fault {
-                                fault_code,
-                                fault_string: fault_string.to_string(),
-                            })
-                        }
-                    }
-                    _ => Err(ParseError::ParseFaultError(
-                        "missing either faultCode or faultString".into(),
-                    )),
-                }
-            }
-            _ => Err(ParseError::ParseFaultError("expected struct".into())),
-        }
-    }
-}
-
-/// Turns this `Fault` into an equivalent `Value`.
-///
-/// The returned value can be parsed back into a `Fault` using `Fault::try_from`
-/// or returned as a `<fault>` error response by serializing it into a
-/// `<fault></fault>` tag.
-impl From<&Fault> for Value {
-    fn from(other: &Fault) -> Self {
-        let mut map = BTreeMap::new();
-        map.insert("faultCode".to_string(), Value::from(other.fault_code));
-        map.insert(
-            "faultString".to_string(),
-            Value::from(other.fault_string.clone()),
-        );
-
-        Value::Struct(map)
-    }
 }
 
 #[cfg(test)]
@@ -192,7 +142,11 @@ mod tests {
             fault_string: "The Bald Lazy House Jumps Over The Hyperactive Kitten".to_string(),
         };
 
-        assert_eq!(Fault::try_from(Value::from(&input)).unwrap(), input);
+        let value: Value = input.serialize(crate::value::Serializer::new()).unwrap();
+        let deserializer = crate::value::Deserializer::from_value(value);
+        let new_input: Fault = Fault::deserialize(deserializer).unwrap();
+
+        assert_eq!(new_input, input);
     }
 
     #[test]
