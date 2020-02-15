@@ -43,7 +43,7 @@ where
             let mut buf = Vec::new();
             reader.expect_tag(b"param", &mut buf)?;
             let mut deserializer = ValueDeserializer::new(reader)?;
-            let tmp = T::deserialize(&mut deserializer)?;
+            let ret = T::deserialize(&mut deserializer)?;
             let mut reader = deserializer.into_inner();
             reader
                 .read_to_end(b"param", &mut buf)
@@ -51,8 +51,7 @@ where
             reader
                 .read_to_end(e.name(), &mut buf)
                 .map_err(error::ParseError::from)?;
-
-            Ok(tmp)
+            Ok(ret)
         }
         Event::Start(e) if e.name() == b"fault" => {
             // The inner portion of a fault is just a Value tag, so we

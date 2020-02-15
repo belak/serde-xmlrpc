@@ -34,17 +34,6 @@ where
         Ok(ret)
     }
 
-    #[doc(hidden)]
-    pub fn new_without_value(reader: Reader<B>) -> Self
-    where
-        B: std::io::BufRead,
-    {
-        Deserializer {
-            reader,
-            buf: Vec::new(),
-        }
-    }
-
     pub fn into_inner(self) -> Reader<B>
     where
         B: std::io::BufRead,
@@ -64,117 +53,130 @@ where
     where
         V: serde::de::Visitor<'de>,
     {
-        let ret =
-            match self.reader.read_event(&mut self.buf) {
-                // If we got text, this is a String value. This is an edge case
-                // because it's valid to have a string value without the inner
-                // "string" tag.
-                Ok(Event::Text(e)) => visitor.visit_string::<Self::Error>(
-                    e.unescape_and_decode(&self.reader)
-                        .map_err(ParseError::from)?,
-                )?,
+        let ret = match self.reader.read_event(&mut self.buf) {
+            // If we got text, this is a String value. This is an edge case
+            // because it's valid to have a string value without the inner
+            // "string" tag.
+            Ok(Event::Text(e)) => visitor.visit_string::<Self::Error>(
+                e.unescape_and_decode(&self.reader)
+                    .map_err(ParseError::from)?,
+            )?,
 
-                // Alternatively, if we got the matching end tag, this is an empty
-                // string value. Note that we need to return early here so the end
-                // doesn't try to read the closing tag.
-                Ok(Event::End(ref e)) if e.name() == b"value" => return visitor.visit_str(""),
+            // Alternatively, if we got the matching end tag, this is an empty
+            // string value. Note that we need to return early here so the end
+            // doesn't try to read the closing tag.
+            Ok(Event::End(ref e)) if e.name() == b"value" => return visitor.visit_str(""),
 
-                Ok(Event::Start(ref e)) => match e.name() {
-                    b"int" => {
-                        let mut buf = Vec::new();
-                        let text = self
-                            .reader
-                            .read_text(e.name(), &mut buf)
-                            .map_err(ParseError::from)?;
+            Ok(Event::Start(ref e)) => match e.name() {
+                b"int" => {
+                    let mut buf = Vec::new();
+                    let text = self
+                        .reader
+                        .read_text(e.name(), &mut buf)
+                        .map_err(ParseError::from)?;
+
+                    let val: i64 = text.parse().map_err(ParseError::from)?;
+
+                    if i8::min_value() as i64 <= val && val <= i8::max_value() as i64 {
+                        visitor.visit_i8::<Self::Error>(text.parse().map_err(ParseError::from)?)?
+                    } else if i16::min_value() as i64 <= val && val <= i16::max_value() as i64 {
+                        visitor.visit_i16::<Self::Error>(text.parse().map_err(ParseError::from)?)?
+                    } else if i32::min_value() as i64 <= val && val <= i32::max_value() as i64 {
+                        visitor.visit_i32::<Self::Error>(text.parse().map_err(ParseError::from)?)?
+                    } else {
                         visitor.visit_i64::<Self::Error>(text.parse().map_err(ParseError::from)?)?
                     }
+                }
 
-                    b"boolean" => {
-                        let mut buf = Vec::new();
-                        let text = self
-                            .reader
-                            .read_text(e.name(), &mut buf)
-                            .map_err(ParseError::from)?;
-                        match text.as_ref() {
-                            "1" => visitor.visit_bool::<Self::Error>(true),
-                            "0" => visitor.visit_bool::<Self::Error>(false),
-                            _ => return Err(ParseError::BooleanDecodeError(text).into()),
-                        }?
-                    }
+                b"boolean" => {
+                    let mut buf = Vec::new();
+                    let text = self
+                        .reader
+                        .read_text(e.name(), &mut buf)
+                        .map_err(ParseError::from)?;
+                    match text.as_ref() {
+                        "1" => visitor.visit_bool::<Self::Error>(true),
+                        "0" => visitor.visit_bool::<Self::Error>(false),
+                        _ => return Err(ParseError::BooleanDecodeError(text).into()),
+                    }?
+                }
 
-                    b"string" => {
-                        let mut buf = Vec::new();
-                        visitor.visit_string::<Self::Error>(
-                            self.reader
-                                .read_text(e.name(), &mut buf)
-                                .map_err(ParseError::from)?,
-                        )?
-                    }
-
-                    b"double" => {
-                        let mut buf = Vec::new();
-                        let text = self
-                            .reader
-                            .read_text(e.name(), &mut buf)
-                            .map_err(ParseError::from)?;
-                        visitor.visit_f64::<Self::Error>(text.parse().map_err(ParseError::from)?)?
-                    }
-
-                    b"dateTime.iso8601" => {
-                        unimplemented!();
-                    }
-
-                    b"base64" => {
-                        let mut buf = Vec::new();
-                        let text = self
-                            .reader
-                            .read_text(e.name(), &mut buf)
-                            .map_err(ParseError::from)?;
-                        visitor.visit_byte_buf::<Self::Error>(
-                            base64_decode(&text).map_err(ParseError::from)?,
-                        )?
-                    }
-
-                    b"struct" => visitor.visit_map(MapDeserializer::new(self, b"struct"))?,
-
-                    b"array" => {
-                        visitor.visit_seq(SeqDeserializer::new(self, b"data", Some(b"array"))?)?
-                    }
-                    b"nil" => {
-                        let mut buf = Vec::new();
+                b"string" => {
+                    let mut buf = Vec::new();
+                    visitor.visit_string::<Self::Error>(
                         self.reader
-                            .read_to_end(e.name(), &mut buf)
-                            .map_err(ParseError::from)?;
-                        visitor.visit_unit::<Self::Error>()?
-                    }
+                            .read_text(e.name(), &mut buf)
+                            .map_err(ParseError::from)?,
+                    )?
+                }
 
-                    _ => return Err(ParseError::UnexpectedTag(
+                b"double" => {
+                    let mut buf = Vec::new();
+                    let text = self
+                        .reader
+                        .read_text(e.name(), &mut buf)
+                        .map_err(ParseError::from)?;
+                    visitor.visit_f64::<Self::Error>(text.parse().map_err(ParseError::from)?)?
+                }
+
+                b"dateTime.iso8601" => {
+                    unimplemented!();
+                }
+
+                b"base64" => {
+                    let mut buf = Vec::new();
+                    let text = self
+                        .reader
+                        .read_text(e.name(), &mut buf)
+                        .map_err(ParseError::from)?;
+                    visitor.visit_byte_buf::<Self::Error>(
+                        base64_decode(&text).map_err(ParseError::from)?,
+                    )?
+                }
+
+                b"struct" => visitor.visit_map(MapDeserializer::new(self, b"struct"))?,
+
+                b"array" => {
+                    visitor.visit_seq(SeqDeserializer::new(self, b"data", Some(b"array"))?)?
+                }
+
+                b"nil" => {
+                    let mut buf = Vec::new();
+                    self.reader
+                        .read_to_end(e.name(), &mut buf)
+                        .map_err(ParseError::from)?;
+                    visitor.visit_unit::<Self::Error>()?
+                }
+
+                _ => {
+                    return Err(ParseError::UnexpectedTag(
                         String::from_utf8_lossy(e.name()).into(),
                         "one of int|boolean|string|double|dateTime.iso8601|base64|struct|array|nil"
                             .into(),
                     )
-                    .into()),
-                },
-
-                // Possible error states
-                Ok(Event::Eof) => {
-                    return Err(ParseError::UnexpectedEOF(
-                        "one of int|boolean|string|double|dateTime.iso8601|base64|struct|array|nil"
-                            .into(),
-                    )
                     .into())
                 }
+            },
 
-                Ok(_) => {
-                    return Err(ParseError::UnexpectedEvent(
-                        "one of int|boolean|string|double|dateTime.iso8601|base64|struct|array|nil"
-                            .into(),
-                    )
-                    .into())
-                }
+            // Possible error states
+            Ok(Event::Eof) => {
+                return Err(ParseError::UnexpectedEOF(
+                    "one of int|boolean|string|double|dateTime.iso8601|base64|struct|array|nil"
+                        .into(),
+                )
+                .into())
+            }
 
-                Err(e) => return Err(ParseError::from(e).into()),
-            };
+            Ok(_) => {
+                return Err(ParseError::UnexpectedEvent(
+                    "one of int|boolean|string|double|dateTime.iso8601|base64|struct|array|nil"
+                        .into(),
+                )
+                .into())
+            }
+
+            Err(e) => return Err(ParseError::from(e).into()),
+        };
 
         self.reader
             .read_to_end(b"value", &mut self.buf)
