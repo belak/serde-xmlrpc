@@ -6,7 +6,7 @@ mod error;
 mod util;
 mod value;
 
-use util::{ValueDeserializer, ValueSerializer, WriterExt};
+use util::{ReaderExt, ValueDeserializer, ValueSerializer, WriterExt};
 
 pub use error::{Error, Fault, Result};
 pub use value::Value;
@@ -22,13 +22,37 @@ where
     // Check the first event. This will determine if we're loading a Fault or a
     // Value.
     let mut buf = Vec::new();
+    loop {
+        match reader
+            .read_event(&mut buf)
+            .map_err(error::ParseError::from)?
+        {
+            Event::Decl(_) => continue,
+            Event::Start(e) if e.name() == b"methodResponse" => {
+                break;
+            }
+            e => return Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
+        };
+    }
+
     match reader
         .read_event(&mut buf)
         .map_err(error::ParseError::from)?
     {
-        Event::Start(e) if e.name() == b"methodResponse" => {
+        Event::Start(e) if e.name() == b"params" => {
+            let mut buf = Vec::new();
+            reader.expect_tag(b"param", &mut buf)?;
             let mut deserializer = ValueDeserializer::new(reader)?;
-            T::deserialize(&mut deserializer)
+            let tmp = T::deserialize(&mut deserializer)?;
+            let mut reader = deserializer.into_inner();
+            reader
+                .read_to_end(b"param", &mut buf)
+                .map_err(error::ParseError::from)?;
+            reader
+                .read_to_end(e.name(), &mut buf)
+                .map_err(error::ParseError::from)?;
+
+            Ok(tmp)
         }
         Event::Start(e) if e.name() == b"fault" => {
             // The inner portion of a fault is just a Value tag, so we
@@ -296,5 +320,20 @@ mod tests {
                 assert!(false);
             }
         }
+    }
+
+    #[test]
+    fn parse_value() {
+        let val: String = response_from_str(
+            r#"<?xml version="1.0" encoding="utf-8"?>
+            <methodResponse>
+              <params>
+                <param><value><string>hello world</string></value></param>
+              </params>
+            </methodResponse>"#,
+        )
+        .unwrap();
+
+        assert_eq!(val, "hello world".to_string());
     }
 }

@@ -34,6 +34,17 @@ where
         Ok(ret)
     }
 
+    #[doc(hidden)]
+    pub fn new_without_value(reader: Reader<B>) -> Self
+    where
+        B: std::io::BufRead,
+    {
+        Deserializer {
+            reader,
+            buf: Vec::new(),
+        }
+    }
+
     pub fn into_inner(self) -> Reader<B>
     where
         B: std::io::BufRead,
