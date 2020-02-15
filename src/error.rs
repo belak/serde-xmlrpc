@@ -1,15 +1,10 @@
-use std::collections::BTreeMap;
-use std::convert::TryFrom;
 use std::num::{ParseFloatError, ParseIntError};
-use std::result;
 use std::string::FromUtf8Error;
 
 use base64::DecodeError;
 use quick_xml::Error as XmlError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error as ThisError;
-
-use crate::Value;
 
 /// Errors that can occur when trying to perform an XML-RPC request.
 ///
@@ -113,7 +108,7 @@ pub enum EncodingError {
     XmlError(#[from] XmlError),
 }
 
-pub type Result<T> = result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, Error>;
 
 /// A `<fault>` response, indicating that a request failed.
 ///
@@ -134,6 +129,8 @@ mod tests {
     use super::*;
 
     use std::error;
+
+    use crate::Value;
 
     #[test]
     fn fault_roundtrip() {

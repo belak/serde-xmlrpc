@@ -260,10 +260,9 @@ mod tests {
         );
     }
 
-    /*
     #[test]
     fn parse_fault() {
-        let err = parse_response(
+        let err = response_from_str::<String>(
             r#"<?xml version="1.0" encoding="utf-8"?>
            <methodResponse>
              <fault>
@@ -293,9 +292,9 @@ mod tests {
                 }
             ),
             _ => {
+                println!("{:?}", err);
                 assert!(false);
             }
         }
     }
-    */
 }
