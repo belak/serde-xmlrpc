@@ -16,6 +16,7 @@ iso8601 = "0.3"
 quick-xml = "0.17"
 thiserror = "1.0"
 serde = "1.0"
+serde-transcode = "1.0"
 
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }

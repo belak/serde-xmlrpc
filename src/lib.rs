@@ -1,17 +1,14 @@
-use quick_xml::Writer;
+use quick_xml::{Reader, Writer};
+use serde_transcode::transcode;
 
 mod error;
 mod util;
 mod value;
 
-use util::{ValueSerializer, WriterExt};
+use util::{ValueDeserializer, ValueSerializer, WriterExt};
 
 pub use error::{Error, Result};
 pub use value::Value;
-
-pub fn response_to_string<T>() -> Result<String> {
-    unimplemented!();
-}
 
 pub fn response_from_str<T>(s: &str) -> Result<T>
 where
@@ -20,10 +17,7 @@ where
     unimplemented!();
 }
 
-pub fn request_to_string<T>(name: &str, args: &[T]) -> Result<String>
-where
-    T: serde::Serialize,
-{
+pub fn request_to_string(name: &str, args: Vec<Value>) -> Result<String> {
     let mut writer = Writer::new(Vec::new());
 
     writer
@@ -37,8 +31,9 @@ where
     for value in args {
         writer.write_start_tag(b"param")?;
 
+        let deserializer = value::Deserializer::from_value(value);
         let serializer = ValueSerializer::new(&mut writer);
-        value.serialize(serializer)?;
+        transcode(deserializer, serializer)?;
 
         writer.write_end_tag(b"param")?;
     }
@@ -48,11 +43,25 @@ where
     Ok(String::from_utf8(writer.into_inner()).map_err(error::EncodingError::from)?)
 }
 
-pub fn request_from_str<T>(s: &str) -> Result<T>
+pub fn value_from_str(input: &str) -> Result<Value> {
+    let mut reader = Reader::from_str(input);
+    reader.expand_empty_elements(true);
+    reader.trim_text(true);
+
+    let mut deserializer = ValueDeserializer::new(reader)?;
+    let serializer = value::Serializer::new();
+    transcode(&mut deserializer, serializer)
+}
+
+pub fn value_to_string<I>(val: I) -> Result<String>
 where
-    T: serde::de::DeserializeOwned,
+    I: Into<Value>,
 {
-    unimplemented!();
+    let d = value::Deserializer::from_value(val.into());
+    let mut writer = Writer::new(Vec::new());
+    let s = ValueSerializer::new(&mut writer);
+    transcode(d, s)?;
+    Ok(String::from_utf8(writer.into_inner()).map_err(error::EncodingError::from)?)
 }
 
 /*
@@ -91,29 +100,30 @@ mod tests {
     #[test]
     fn test_stringify_request() {
         assert_eq!(
-            request_to_string::<Value>("hello world", &[]).unwrap(),
+            request_to_string("hello world", vec![]).unwrap(),
             r#"<?xml version="1.0" encoding="utf-8"?><methodCall><methodName>hello world</methodName><params></params></methodCall>"#.to_owned()
         )
     }
 
-    /*
     /// A 32-bit signed integer (`<i4>` or `<int>`).
     #[test]
     fn parse_int_values() {
         assert_eq!(
-            parse_value("<value><i4>42</i4></value>").unwrap().as_i32(),
+            value_from_str("<value><int>42</int></value>")
+                .unwrap()
+                .as_i32(),
             Some(42)
         );
 
         assert_eq!(
-            parse_value("<value><int>-42</int></value>")
+            value_from_str("<value><int>-42</int></value>")
                 .unwrap()
                 .as_i32(),
             Some(-42)
         );
 
         assert_eq!(
-            parse_value("<value><int>2147483647</int></value>")
+            value_from_str("<value><int>2147483647</int></value>")
                 .unwrap()
                 .as_i32(),
             Some(2147483647)
@@ -124,12 +134,14 @@ mod tests {
     #[test]
     fn parse_long_values() {
         assert_eq!(
-            parse_value("<value><i8>42</i8></value>").unwrap().as_i64(),
+            value_from_str("<value><int>42</int></value>")
+                .unwrap()
+                .as_i64(),
             Some(42)
         );
 
         assert_eq!(
-            parse_value("<value><i8>9223372036854775807</i8></value>")
+            value_from_str("<value><int>9223372036854775807</int></value>")
                 .unwrap()
                 .as_i64(),
             Some(9223372036854775807)
@@ -140,13 +152,13 @@ mod tests {
     #[test]
     fn parse_boolean_values() {
         assert_eq!(
-            parse_value("<value><boolean>1</boolean></value>")
+            value_from_str("<value><boolean>1</boolean></value>")
                 .unwrap()
                 .as_bool(),
             Some(true)
         );
         assert_eq!(
-            parse_value("<value><boolean>0</boolean></value>")
+            value_from_str("<value><boolean>0</boolean></value>")
                 .unwrap()
                 .as_bool(),
             Some(false)
@@ -158,49 +170,49 @@ mod tests {
     #[test]
     fn parse_string_values() {
         assert_eq!(
-            parse_value("<value><string>hello</string></value>")
+            value_from_str("<value><string>hello</string></value>")
                 .unwrap()
                 .as_str(),
             Some("hello")
         );
 
         assert_eq!(
-            parse_value("<value>world</value>").unwrap().as_str(),
+            value_from_str("<value>world</value>").unwrap().as_str(),
             Some("world")
         );
 
-        assert_eq!(parse_value("<value />").unwrap().as_str(), Some(""));
+        assert_eq!(value_from_str("<value />").unwrap().as_str(), Some(""));
     }
 
     /// A double-precision IEEE 754 floating point number (`<double>`).
     #[test]
     fn parse_double_values() {
         assert_eq!(
-            parse_value("<value><double>1</double></value>")
+            value_from_str("<value><double>1</double></value>")
                 .unwrap()
                 .as_f64(),
             Some(1.0)
         );
         assert_eq!(
-            parse_value("<value><double>0</double></value>")
+            value_from_str("<value><double>0</double></value>")
                 .unwrap()
                 .as_f64(),
             Some(0.0)
         );
         assert_eq!(
-            parse_value("<value><double>42</double></value>")
+            value_from_str("<value><double>42</double></value>")
                 .unwrap()
                 .as_f64(),
             Some(42.0)
         );
         assert_eq!(
-            parse_value("<value><double>3.14</double></value>")
+            value_from_str("<value><double>3.14</double></value>")
                 .unwrap()
                 .as_f64(),
             Some(3.14)
         );
         assert_eq!(
-            parse_value("<value><double>-3.14</double></value>")
+            value_from_str("<value><double>-3.14</double></value>")
                 .unwrap()
                 .as_f64(),
             Some(-3.14)
@@ -213,7 +225,7 @@ mod tests {
     #[test]
     fn parse_base64_values() {
         assert_eq!(
-            parse_value("<value><base64>aGVsbG8gd29ybGQ=</base64></value>")
+            value_from_str("<value><base64>aGVsbG8gd29ybGQ=</base64></value>")
                 .unwrap()
                 .as_bytes(),
             Some(&b"hello world"[..])
@@ -226,7 +238,7 @@ mod tests {
     #[test]
     fn parse_array_values() {
         assert_eq!(
-            parse_value(
+            value_from_str(
                 "<value><array><data><value></value><value><nil /></value></data></array></value>"
             )
             .unwrap()
@@ -238,9 +250,13 @@ mod tests {
     /// The empty (Unit) value (`<nil/>`).
     #[test]
     fn parse_nil_values() {
-        assert_eq!(parse_value("<value><nil /></value>").unwrap(), Value::Nil);
+        assert_eq!(
+            value_from_str("<value><nil /></value>").unwrap(),
+            Value::Nil
+        );
     }
 
+    /*
     #[test]
     fn parse_fault() {
         let err = parse_response(

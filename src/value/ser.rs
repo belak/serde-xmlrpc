@@ -6,6 +6,12 @@ use crate::{Error, Result, Value};
 
 pub struct Serializer;
 
+impl Serializer {
+    pub fn new() -> Self {
+        Serializer {}
+    }
+}
+
 impl serde::Serializer for Serializer {
     type Error = Error;
     type Ok = Value;
