@@ -1,45 +1,80 @@
-use quick_xml::{Reader, Writer};
+use quick_xml::{events::Event, Reader, Writer};
+use serde::Deserialize;
+use serde_transcode::transcode;
 
 mod error;
-mod utils;
+mod util;
 mod value;
 
-use utils::{ReaderExt, WriterExt};
+use util::{ReaderExt, ValueDeserializer, ValueSerializer, WriterExt};
 
-pub use crate::error::{Error, Result};
-pub use crate::value::Value;
+pub use error::{Error, Fault, Result};
+pub use value::Value;
 
-pub fn parse_response(data: &str) -> Result<Value> {
-    let mut reader = Reader::from_str(data);
+pub fn response_from_str<T>(input: &str) -> Result<T>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let mut reader = Reader::from_str(input);
     reader.expand_empty_elements(true);
     reader.trim_text(true);
 
+    // Check the first event. This will determine if we're loading a Fault or a
+    // Value.
     let mut buf = Vec::new();
+    loop {
+        match reader
+            .read_event(&mut buf)
+            .map_err(error::ParseError::from)?
+        {
+            Event::Decl(_) => continue,
+            Event::Start(e) if e.name() == b"methodResponse" => {
+                break;
+            }
+            e => return Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
+        };
+    }
 
-    // We expect a value tag first, followed by a value. Note that the inner
-    // read will properly handle ensuring we get a closing value tag.
-    reader.expect_tag(b"methodResponse", &mut buf)?;
+    match reader
+        .read_event(&mut buf)
+        .map_err(error::ParseError::from)?
+    {
+        Event::Start(e) if e.name() == b"params" => {
+            let mut buf = Vec::new();
+            reader.expect_tag(b"param", &mut buf)?;
+            let mut deserializer = ValueDeserializer::new(reader)?;
+            let ret = T::deserialize(&mut deserializer)?;
+            let mut reader = deserializer.into_inner();
+            reader
+                .read_to_end(b"param", &mut buf)
+                .map_err(error::ParseError::from)?;
+            reader
+                .read_to_end(e.name(), &mut buf)
+                .map_err(error::ParseError::from)?;
+            Ok(ret)
+        }
+        Event::Start(e) if e.name() == b"fault" => {
+            // The inner portion of a fault is just a Value tag, so we
+            // deserialize it from a value.
+            let mut deserializer = ValueDeserializer::new(reader)?;
+            let fault: Fault = Fault::deserialize(&mut deserializer)?;
 
-    Value::read_response_from_reader(&mut reader, &mut buf)
+            // Pull the reader back out so we can verify the end tag.
+            let mut reader = deserializer.into_inner();
+
+            let mut buf = Vec::new();
+            reader
+                .read_to_end(e.name(), &mut buf)
+                .map_err(error::ParseError::from)?;
+
+            Err(fault.into())
+        }
+        e => Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
+    }
 }
 
-pub fn parse_value(data: &str) -> Result<Value> {
-    let mut reader = Reader::from_str(data);
-    reader.expand_empty_elements(true);
-    reader.trim_text(true);
-
-    let mut buf = Vec::new();
-
-    // We expect a value tag first, followed by a value. Note that the inner
-    // read will properly handle ensuring we get a closing value tag.
-    reader.expect_tag(b"value", &mut buf)?;
-
-    Value::read_value_from_reader(&mut reader, &mut buf)
-}
-
-pub fn stringify_request(name: &str, args: &[Value]) -> Result<String> {
-    let mut buf = Vec::new();
-    let mut writer = Writer::new(&mut buf);
+pub fn request_to_string(name: &str, args: Vec<Value>) -> Result<String> {
+    let mut writer = Writer::new(Vec::new());
 
     writer
         .write(br#"<?xml version="1.0" encoding="utf-8"?>"#)
@@ -52,16 +87,37 @@ pub fn stringify_request(name: &str, args: &[Value]) -> Result<String> {
     for value in args {
         writer.write_start_tag(b"param")?;
 
-        writer
-            .write(value.stringify()?.as_ref())
-            .map_err(error::EncodingError::from)?;
+        let deserializer = value::Deserializer::from_value(value);
+        let serializer = ValueSerializer::new(&mut writer);
+        transcode(deserializer, serializer)?;
 
         writer.write_end_tag(b"param")?;
     }
     writer.write_end_tag(b"params")?;
     writer.write_end_tag(b"methodCall")?;
 
-    Ok(String::from_utf8(buf).map_err(error::EncodingError::from)?)
+    Ok(String::from_utf8(writer.into_inner()).map_err(error::EncodingError::from)?)
+}
+
+pub fn value_from_str(input: &str) -> Result<Value> {
+    let mut reader = Reader::from_str(input);
+    reader.expand_empty_elements(true);
+    reader.trim_text(true);
+
+    let mut deserializer = ValueDeserializer::new(reader)?;
+    let serializer = value::Serializer::new();
+    transcode(&mut deserializer, serializer)
+}
+
+pub fn value_to_string<I>(val: I) -> Result<String>
+where
+    I: Into<Value>,
+{
+    let d = value::Deserializer::from_value(val.into());
+    let mut writer = Writer::new(Vec::new());
+    let s = ValueSerializer::new(&mut writer);
+    transcode(d, s)?;
+    Ok(String::from_utf8(writer.into_inner()).map_err(error::EncodingError::from)?)
 }
 
 #[cfg(test)]
@@ -71,7 +127,7 @@ mod tests {
     #[test]
     fn test_stringify_request() {
         assert_eq!(
-            stringify_request("hello world", &[]).unwrap(),
+            request_to_string("hello world", vec![]).unwrap(),
             r#"<?xml version="1.0" encoding="utf-8"?><methodCall><methodName>hello world</methodName><params></params></methodCall>"#.to_owned()
         )
     }
@@ -80,19 +136,21 @@ mod tests {
     #[test]
     fn parse_int_values() {
         assert_eq!(
-            parse_value("<value><i4>42</i4></value>").unwrap().as_i32(),
+            value_from_str("<value><int>42</int></value>")
+                .unwrap()
+                .as_i32(),
             Some(42)
         );
 
         assert_eq!(
-            parse_value("<value><int>-42</int></value>")
+            value_from_str("<value><int>-42</int></value>")
                 .unwrap()
                 .as_i32(),
             Some(-42)
         );
 
         assert_eq!(
-            parse_value("<value><int>2147483647</int></value>")
+            value_from_str("<value><int>2147483647</int></value>")
                 .unwrap()
                 .as_i32(),
             Some(2147483647)
@@ -103,12 +161,14 @@ mod tests {
     #[test]
     fn parse_long_values() {
         assert_eq!(
-            parse_value("<value><i8>42</i8></value>").unwrap().as_i64(),
+            value_from_str("<value><int>42</int></value>")
+                .unwrap()
+                .as_i64(),
             Some(42)
         );
 
         assert_eq!(
-            parse_value("<value><i8>9223372036854775807</i8></value>")
+            value_from_str("<value><int>9223372036854775807</int></value>")
                 .unwrap()
                 .as_i64(),
             Some(9223372036854775807)
@@ -119,13 +179,13 @@ mod tests {
     #[test]
     fn parse_boolean_values() {
         assert_eq!(
-            parse_value("<value><boolean>1</boolean></value>")
+            value_from_str("<value><boolean>1</boolean></value>")
                 .unwrap()
                 .as_bool(),
             Some(true)
         );
         assert_eq!(
-            parse_value("<value><boolean>0</boolean></value>")
+            value_from_str("<value><boolean>0</boolean></value>")
                 .unwrap()
                 .as_bool(),
             Some(false)
@@ -137,49 +197,49 @@ mod tests {
     #[test]
     fn parse_string_values() {
         assert_eq!(
-            parse_value("<value><string>hello</string></value>")
+            value_from_str("<value><string>hello</string></value>")
                 .unwrap()
                 .as_str(),
             Some("hello")
         );
 
         assert_eq!(
-            parse_value("<value>world</value>").unwrap().as_str(),
+            value_from_str("<value>world</value>").unwrap().as_str(),
             Some("world")
         );
 
-        assert_eq!(parse_value("<value />").unwrap().as_str(), Some(""));
+        assert_eq!(value_from_str("<value />").unwrap().as_str(), Some(""));
     }
 
     /// A double-precision IEEE 754 floating point number (`<double>`).
     #[test]
     fn parse_double_values() {
         assert_eq!(
-            parse_value("<value><double>1</double></value>")
+            value_from_str("<value><double>1</double></value>")
                 .unwrap()
                 .as_f64(),
             Some(1.0)
         );
         assert_eq!(
-            parse_value("<value><double>0</double></value>")
+            value_from_str("<value><double>0</double></value>")
                 .unwrap()
                 .as_f64(),
             Some(0.0)
         );
         assert_eq!(
-            parse_value("<value><double>42</double></value>")
+            value_from_str("<value><double>42</double></value>")
                 .unwrap()
                 .as_f64(),
             Some(42.0)
         );
         assert_eq!(
-            parse_value("<value><double>3.14</double></value>")
+            value_from_str("<value><double>3.14</double></value>")
                 .unwrap()
                 .as_f64(),
             Some(3.14)
         );
         assert_eq!(
-            parse_value("<value><double>-3.14</double></value>")
+            value_from_str("<value><double>-3.14</double></value>")
                 .unwrap()
                 .as_f64(),
             Some(-3.14)
@@ -192,7 +252,7 @@ mod tests {
     #[test]
     fn parse_base64_values() {
         assert_eq!(
-            parse_value("<value><base64>aGVsbG8gd29ybGQ=</base64></value>")
+            value_from_str("<value><base64>aGVsbG8gd29ybGQ=</base64></value>")
                 .unwrap()
                 .as_bytes(),
             Some(&b"hello world"[..])
@@ -205,7 +265,7 @@ mod tests {
     #[test]
     fn parse_array_values() {
         assert_eq!(
-            parse_value(
+            value_from_str(
                 "<value><array><data><value></value><value><nil /></value></data></array></value>"
             )
             .unwrap()
@@ -217,12 +277,15 @@ mod tests {
     /// The empty (Unit) value (`<nil/>`).
     #[test]
     fn parse_nil_values() {
-        assert_eq!(parse_value("<value><nil /></value>").unwrap(), Value::Nil);
+        assert_eq!(
+            value_from_str("<value><nil /></value>").unwrap(),
+            Value::Nil
+        );
     }
 
     #[test]
     fn parse_fault() {
-        let err = parse_response(
+        let err = response_from_str::<String>(
             r#"<?xml version="1.0" encoding="utf-8"?>
            <methodResponse>
              <fault>
@@ -252,8 +315,24 @@ mod tests {
                 }
             ),
             _ => {
+                println!("{:?}", err);
                 assert!(false);
             }
         }
+    }
+
+    #[test]
+    fn parse_value() {
+        let val: String = response_from_str(
+            r#"<?xml version="1.0" encoding="utf-8"?>
+            <methodResponse>
+              <params>
+                <param><value><string>hello world</string></value></param>
+              </params>
+            </methodResponse>"#,
+        )
+        .unwrap();
+
+        assert_eq!(val, "hello world".to_string());
     }
 }

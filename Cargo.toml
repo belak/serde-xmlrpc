@@ -15,3 +15,5 @@ base64 = "0.11"
 iso8601 = "0.3"
 quick-xml = "0.17"
 thiserror = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde-transcode = "1.0"
