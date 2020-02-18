@@ -1,12 +1,12 @@
 [package]
-name = "simple-xmlrpc"
-description = "A simple, no nonsense, XML-RPC implementation for Rust"
+name = "serde_xmlrpc"
+description = "A simple, no nonsense, XML-RPC serde implementation for Rust"
 license = "MIT"
-version = "0.1.1-alpha.0"
+version = "0.1.0"
 authors = ["Kaleb Elwert <belak@coded.io>"]
 edition = "2018"
-documentation = "https://docs.rs/simple-xmlrpc"
-repository = "https://github.com/belak/simple-xmlrpc-rs"
+documentation = "https://docs.rs/serde_xmlrpc"
+repository = "https://github.com/belak/serde-xmlrpc"
 readme = "README.md"
 
 [dependencies]
@@ -17,3 +17,6 @@ quick-xml = "0.17"
 thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde-transcode = "1.0"
+
+[package.metadata.release]
+no-dev-version = true
