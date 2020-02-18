@@ -68,7 +68,7 @@ where
             Ok(Event::End(ref e)) if e.name() == b"value" => return visitor.visit_str(""),
 
             Ok(Event::Start(ref e)) => match e.name() {
-                b"int" => {
+                b"int" | b"i4" | b"i8" => {
                     let mut buf = Vec::new();
                     let text = self
                         .reader
@@ -151,7 +151,7 @@ where
                 _ => {
                     return Err(ParseError::UnexpectedTag(
                         String::from_utf8_lossy(e.name()).into(),
-                        "one of int|boolean|string|double|dateTime.iso8601|base64|struct|array|nil"
+                        "one of int|i4|i8boolean|string|double|dateTime.iso8601|base64|struct|array|nil"
                             .into(),
                     )
                     .into())
@@ -161,7 +161,7 @@ where
             // Possible error states
             Ok(Event::Eof) => {
                 return Err(ParseError::UnexpectedEOF(
-                    "one of int|boolean|string|double|dateTime.iso8601|base64|struct|array|nil"
+                    "one of int|i4|i8|boolean|string|double|dateTime.iso8601|base64|struct|array|nil"
                         .into(),
                 )
                 .into())
@@ -169,7 +169,7 @@ where
 
             Ok(_) => {
                 return Err(ParseError::UnexpectedEvent(
-                    "one of int|boolean|string|double|dateTime.iso8601|base64|struct|array|nil"
+                    "one of int|i4|i8|boolean|string|double|dateTime.iso8601|base64|struct|array|nil"
                         .into(),
                 )
                 .into())
