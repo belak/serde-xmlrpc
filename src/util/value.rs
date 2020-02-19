@@ -1,6 +1,7 @@
 use base64::{decode as base64_decode, encode as base64_encode};
 use quick_xml::{events::Event, Reader, Writer};
 use serde::forward_to_deserialize_any;
+use std::convert::TryInto;
 
 use crate::error::ParseError;
 use crate::util::{ReaderExt, WriterExt};
@@ -77,14 +78,14 @@ where
 
                     let val: i64 = text.parse().map_err(ParseError::from)?;
 
-                    if i8::min_value() as i64 <= val && val <= i8::max_value() as i64 {
-                        visitor.visit_i8::<Self::Error>(text.parse().map_err(ParseError::from)?)?
-                    } else if i16::min_value() as i64 <= val && val <= i16::max_value() as i64 {
-                        visitor.visit_i16::<Self::Error>(text.parse().map_err(ParseError::from)?)?
-                    } else if i32::min_value() as i64 <= val && val <= i32::max_value() as i64 {
-                        visitor.visit_i32::<Self::Error>(text.parse().map_err(ParseError::from)?)?
+                    if let Ok(val) = val.try_into() {
+                        visitor.visit_i8::<Self::Error>(val)?
+                    } else if let Ok(val) = val.try_into() {
+                        visitor.visit_i16::<Self::Error>(val)?
+                    } else if let Ok(val) = val.try_into() {
+                        visitor.visit_i32::<Self::Error>(val)?
                     } else {
-                        visitor.visit_i64::<Self::Error>(text.parse().map_err(ParseError::from)?)?
+                        visitor.visit_i64::<Self::Error>(val)?
                     }
                 }
 
