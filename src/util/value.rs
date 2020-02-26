@@ -121,7 +121,12 @@ where
                 }
 
                 b"dateTime.iso8601" => {
-                    unimplemented!();
+                    let mut buf = Vec::new();
+                    visitor.visit_string::<Self::Error>(
+                        self.reader
+                            .read_text(e.name(), &mut buf)
+                            .map_err(ParseError::from)?,
+                    )?
                 }
 
                 b"base64" => {
@@ -152,7 +157,7 @@ where
                 _ => {
                     return Err(ParseError::UnexpectedTag(
                         String::from_utf8_lossy(e.name()).into(),
-                        "one of int|i4|i8boolean|string|double|dateTime.iso8601|base64|struct|array|nil"
+                        "one of int|i4|i8|boolean|string|double|dateTime.iso8601|base64|struct|array|nil"
                             .into(),
                     )
                     .into())
