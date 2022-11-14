@@ -303,7 +303,7 @@ where
 
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok> {
         self.writer.write_start_tag(b"value")?;
-        self.writer.write_safe_tag(b"string", &base64_encode(v))?;
+        self.writer.write_safe_tag(b"base64", &base64_encode(v))?;
         self.writer.write_end_tag(b"value")?;
         Ok(())
     }
