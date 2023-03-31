@@ -1,3 +1,5 @@
+use std::fmt::Error;
+
 use quick_xml::{events::Event, Reader, Writer};
 use serde::Deserialize;
 use serde_transcode::transcode;
@@ -71,6 +73,32 @@ where
         }
         e => Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
     }
+}
+
+/// Expects an input string which is xmlrpc request body, and parses out the method name and parameters from it.
+/// This function would typically be used by a server to parse incoming requests.
+pub fn request_from_string<T: serde::de::DeserializeOwned>(request: &str) -> Result<(String, T)> {
+    let mut reader = Reader::from_str(request);
+    reader.expand_empty_elements(true);
+    reader.trim_text(true);
+
+    // Search for methodCall start
+    let mut buf = Vec::new();
+    loop {
+        match reader
+            .read_event(&mut buf)
+            .map_err(error::ParseError::from)?
+        {
+            Event::Decl(_) => continue,
+            Event::Start(e) if e.name() == b"methodCall" => {
+                break;
+            }
+            e => return Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
+        };
+    }
+
+    //TODO
+
 }
 
 pub fn request_to_string(name: &str, args: Vec<Value>) -> Result<String> {
@@ -334,5 +362,22 @@ mod tests {
         .unwrap();
 
         assert_eq!(val, "hello world".to_string());
+    }
+
+    #[test]
+    fn parse_request() {
+        // Example data taken from a ROS node
+        let val =
+          r#"<?xml version=\"1.0\"?>
+          <methodCall>
+            <methodName>requestTopic</methodName>
+            <params>
+              <param><value>/rosout</value></param>
+              <param><value>/rosout</value></param>
+              <param><value><array><data><value><array><data><value>TCPROS</value></data></array></value></data></array></value></param>
+            </params>
+          </methodCall>"#;
+
+        let response: (String, (String, String, Vec<String>)) = parse_request(val);
     }
 }
