@@ -8,6 +8,7 @@ pub mod ser;
 pub use de::Deserializer;
 pub use ser::Serializer;
 
+/// Represents any single valid xmlrpc "Value"
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     /// A 32-bit signed integer (`<i4>` or `<int>`).
