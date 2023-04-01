@@ -1,4 +1,4 @@
-use base64::encode as base64_encode;
+use base64::prelude::*;
 use quick_xml::{events::Event, Writer};
 use serde::forward_to_deserialize_any;
 
@@ -189,7 +189,8 @@ where
     }
 
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok> {
-        self.writer.write_safe_tag(b"name", &base64_encode(v))
+        self.writer
+            .write_safe_tag(b"name", &BASE64_STANDARD.encode(v))
     }
 
     fn serialize_none(self) -> Result<Self::Ok> {

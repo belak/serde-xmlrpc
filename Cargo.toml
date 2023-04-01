@@ -11,9 +11,9 @@ readme = "README.md"
 
 [dependencies]
 anyhow = "1.0"
-base64 = "0.11"
-iso8601 = "0.3"
+base64 = "0.21"
+iso8601 = "0.6"
 quick-xml = "0.17"
 thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-serde-transcode = "1.0"
+serde-transcode = "1.1"
