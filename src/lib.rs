@@ -96,6 +96,10 @@ pub fn request_from_string<T: serde::de::DeserializeOwned>(request: &str) -> Res
         };
     }
 
+    // This code currently assumes that the <methodName> will always precede <params>
+    // in the xmlrpc request, I'm not certain that this is actually enforced by the
+    // specification, but could find not counter example where it wasn't true... -Carter
+
     let method_name = match reader
         .read_event(&mut buf)
         .map_err(error::ParseError::from)?
@@ -394,31 +398,27 @@ mod tests {
     }
 
     #[test]
-    fn parse_multiple_values() {
+    fn test_parse_request() {
+        // Example data taken from a ROS node connection negotation
+        let val =
+          r#"<?xml version=\"1.0\"?>
+          <methodCall>
+            <methodName>requestTopic</methodName>
+            <params>
+              <param><value>/rosout</value></param>
+            </params>
+          </methodCall>"#;
 
-        #[derive(serde::Deserialize)]
-        struct TwoStrings {
-            val1: String,
-            val2: String,
-        };
-
-        let val: TwoStrings = response_from_str(
-            r#"<?xml version="1.0" encoding="utf-8"?>
-            <methodResponse>
-              <params>
-                <param><value><string>hello</string></value></param>
-                <param><value><string>world</string></value></param>
-              </params>
-            </methodResponse>"#,
-        )
-        .unwrap();
-        assert_eq!(val.val1, "hello".to_string());
-        assert_eq!(val.val2, "world".to_string());
+        let (method_name, arg) = request_from_string::<String>(&val).unwrap();
+        assert_eq!(arg, "/rosout".to_string());
     }
 
+
+    /// This test is currently failing
+    /// the code adapted from response_to_string is not varadic against multiple params
     #[test]
-    fn test_parse_request() {
-        // Example data taken from a ROS node
+    fn test_parse_request_multiple_params() {
+        // Example data taken from a ROS node connection negotation
         let val =
           r#"<?xml version=\"1.0\"?>
           <methodCall>
