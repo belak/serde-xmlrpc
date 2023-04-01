@@ -76,7 +76,7 @@ where
 /// Expects an input string which is xmlrpc request body, and parses out the method name and parameters from it.
 /// This function would typically be used by a server to parse incoming requests.
 /// Returns a tuple of (function name, Arguments)
-pub fn request_from_string<T: serde::de::DeserializeOwned>(request: &str) -> Result<(String, T)> {
+pub fn request_from_str<T: serde::de::DeserializeOwned>(request: &str) -> Result<(String, T)> {
     let mut reader = Reader::from_str(request);
     reader.expand_empty_elements(true);
     reader.trim_text(true);
@@ -430,6 +430,6 @@ mod tests {
             </params>
           </methodCall>"#;
 
-        let response: (String, (String, String, Vec<String>)) = request_from_string(val).unwrap();
+        let response: (String, (String, String, Vec<String>)) = request_from_str(val).unwrap();
     }
 }
