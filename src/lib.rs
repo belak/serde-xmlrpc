@@ -1,5 +1,7 @@
+use std::convert::TryFrom;
+
 use quick_xml::{events::Event, Reader, Writer};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use serde_transcode::transcode;
 
 mod error;
@@ -75,8 +77,10 @@ where
 
 /// Expects an input string which is xmlrpc request body, and parses out the method name and parameters from it.
 /// This function would typically be used by a server to parse incoming requests.
-/// Returns a tuple of (function name, Arguments)
-pub fn request_from_str<T: serde::de::DeserializeOwned>(request: &str) -> Result<(String, T)> {
+/// Returns a tuple of (method name, Arguments).
+/// This does not parse the types of the arguments, as typically the server needs to resolve
+/// the method name prior know expected types.
+pub fn request_from_str(request: &str) -> Result<(String, Vec<Value>)> {
     let mut reader = Reader::from_str(request);
     reader.expand_empty_elements(true);
     reader.trim_text(true);
@@ -106,11 +110,12 @@ pub fn request_from_str<T: serde::de::DeserializeOwned>(request: &str) -> Result
     {
         Event::Start(e) if e.name() == b"methodName" => {
             let mut buf = Vec::new();
-            reader.read_text(e.name(), &mut buf).map_err(error::ParseError::from)?
+            reader
+                .read_text(e.name(), &mut buf)
+                .map_err(error::ParseError::from)?
         }
         e => return Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
     };
-
 
     match reader
         .read_event(&mut buf)
@@ -118,17 +123,24 @@ pub fn request_from_str<T: serde::de::DeserializeOwned>(request: &str) -> Result
     {
         Event::Start(e) if e.name() == b"params" => {
             let mut buf = Vec::new();
-            reader.expect_tag(b"param", &mut buf)?;
-            let mut deserializer = ValueDeserializer::new(reader)?;
-            let ret = T::deserialize(&mut deserializer)?;
-            let mut reader = deserializer.into_inner();
-            reader
-                .read_to_end(b"param", &mut buf)
-                .map_err(error::ParseError::from)?;
-            reader
-                .read_to_end(e.name(), &mut buf)
-                .map_err(error::ParseError::from)?;
-            Ok((method_name, ret))
+            let mut params = Vec::new();
+            // Read each parameter into a Value
+            while let Ok(_) = reader.expect_tag(b"param", &mut buf) {
+                // This feels wrong / inefficient, but was the best way I could come up with
+                // from looking at the general structure of this code:
+                let mut reader2 = Reader::from_str(&request[reader.buffer_position()..]);
+                reader2.expand_empty_elements(true);
+                reader2.trim_text(true);
+
+                let mut deserializer = ValueDeserializer::new(reader2)?;
+                let serializer = value::Serializer::new();
+                let x = transcode(&mut deserializer, serializer)?;
+                params.push(x);
+                reader
+                    .read_to_end(b"param", &mut buf)
+                    .map_err(error::ParseError::from)?;
+            }
+            Ok((method_name, params))
         }
         e => Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
     }
@@ -400,8 +412,7 @@ mod tests {
     #[test]
     fn test_parse_request() {
         // Example data taken from a ROS node connection negotation
-        let val =
-          r#"<?xml version=\"1.0\"?>
+        let val = r#"<?xml version=\"1.0\"?>
           <methodCall>
             <methodName>requestTopic</methodName>
             <params>
@@ -409,18 +420,16 @@ mod tests {
             </params>
           </methodCall>"#;
 
-        let (method_name, arg) = request_from_string::<String>(&val).unwrap();
-        assert_eq!(arg, "/rosout".to_string());
+        let (method_name, arg) = request_from_str(&val).unwrap();
+        assert_eq!(arg.get(0).unwrap().as_str().unwrap(), "/rosout");
     }
-
 
     /// This test is currently failing
     /// the code adapted from response_to_string is not varadic against multiple params
     #[test]
     fn test_parse_request_multiple_params() {
         // Example data taken from a ROS node connection negotation
-        let val =
-          r#"<?xml version=\"1.0\"?>
+        let val = r#"<?xml version=\"1.0\"?>
           <methodCall>
             <methodName>requestTopic</methodName>
             <params>
@@ -430,6 +439,25 @@ mod tests {
             </params>
           </methodCall>"#;
 
-        let response: (String, (String, String, Vec<String>)) = request_from_str(val).unwrap();
+        let (method, vals) = request_from_str(val).unwrap();
+        assert_eq!(vals.len(), 3);
+        assert_eq!(&method, "requestTopic");
+        assert_eq!(vals.get(0).unwrap().as_str().unwrap(), "/rosout");
+        assert_eq!(vals.get(1).unwrap().as_str().unwrap(), "/rosout");
+        assert_eq!(
+            vals.get(2)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .get(0)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .get(0)
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "TCPROS"
+        );
     }
 }
