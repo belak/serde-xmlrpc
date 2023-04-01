@@ -1,5 +1,3 @@
-use std::fmt::Error;
-
 use quick_xml::{events::Event, Reader, Writer};
 use serde::Deserialize;
 use serde_transcode::transcode;
@@ -77,6 +75,7 @@ where
 
 /// Expects an input string which is xmlrpc request body, and parses out the method name and parameters from it.
 /// This function would typically be used by a server to parse incoming requests.
+/// Returns a tuple of (function name, Arguments)
 pub fn request_from_string<T: serde::de::DeserializeOwned>(request: &str) -> Result<(String, T)> {
     let mut reader = Reader::from_str(request);
     reader.expand_empty_elements(true);
@@ -97,8 +96,38 @@ pub fn request_from_string<T: serde::de::DeserializeOwned>(request: &str) -> Res
         };
     }
 
-    //TODO
+    let method_name = match reader
+        .read_event(&mut buf)
+        .map_err(error::ParseError::from)?
+    {
+        Event::Start(e) if e.name() == b"methodName" => {
+            let mut buf = Vec::new();
+            reader.read_text(e.name(), &mut buf).map_err(error::ParseError::from)?
+        }
+        e => return Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
+    };
 
+
+    match reader
+        .read_event(&mut buf)
+        .map_err(error::ParseError::from)?
+    {
+        Event::Start(e) if e.name() == b"params" => {
+            let mut buf = Vec::new();
+            reader.expect_tag(b"param", &mut buf)?;
+            let mut deserializer = ValueDeserializer::new(reader)?;
+            let ret = T::deserialize(&mut deserializer)?;
+            let mut reader = deserializer.into_inner();
+            reader
+                .read_to_end(b"param", &mut buf)
+                .map_err(error::ParseError::from)?;
+            reader
+                .read_to_end(e.name(), &mut buf)
+                .map_err(error::ParseError::from)?;
+            Ok((method_name, ret))
+        }
+        e => Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
+    }
 }
 
 pub fn request_to_string(name: &str, args: Vec<Value>) -> Result<String> {
@@ -365,7 +394,30 @@ mod tests {
     }
 
     #[test]
-    fn parse_request() {
+    fn parse_multiple_values() {
+
+        #[derive(serde::Deserialize)]
+        struct TwoStrings {
+            val1: String,
+            val2: String,
+        };
+
+        let val: TwoStrings = response_from_str(
+            r#"<?xml version="1.0" encoding="utf-8"?>
+            <methodResponse>
+              <params>
+                <param><value><string>hello</string></value></param>
+                <param><value><string>world</string></value></param>
+              </params>
+            </methodResponse>"#,
+        )
+        .unwrap();
+        assert_eq!(val.val1, "hello".to_string());
+        assert_eq!(val.val2, "world".to_string());
+    }
+
+    #[test]
+    fn test_parse_request() {
         // Example data taken from a ROS node
         let val =
           r#"<?xml version=\"1.0\"?>
@@ -378,6 +430,6 @@ mod tests {
             </params>
           </methodCall>"#;
 
-        let response: (String, (String, String, Vec<String>)) = parse_request(val);
+        let response: (String, (String, String, Vec<String>)) = request_from_string(val).unwrap();
     }
 }
