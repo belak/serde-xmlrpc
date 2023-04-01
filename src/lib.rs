@@ -73,11 +73,11 @@ where
     }
 }
 
-/// Expects an input string which is xmlrpc request body, and parses out the method name and parameters from it.
+/// Expects an input string which is a valid xmlrpc request body, and parses out the method name and parameters from it.
 /// This function would typically be used by a server to parse incoming requests.
-/// Returns a tuple of (method name, Arguments).
+///   * Returns a tuple of (method name, Arguments) if successful
 /// This does not parse the types of the arguments, as typically the server needs to resolve
-/// the method name prior know expected types.
+/// the method name before it can know the expected types.
 pub fn request_from_str(request: &str) -> Result<(String, Vec<Value>)> {
     let mut reader = Reader::from_str(request);
     reader.expand_empty_elements(true);
@@ -409,7 +409,7 @@ mod tests {
 
     #[test]
     fn test_parse_request() {
-        // Example data taken from a ROS node connection negotation
+        // Example data taken from a ROS node connection negotation, and hand simplified for minimum case
         let val = r#"<?xml version=\"1.0\"?>
           <methodCall>
             <methodName>requestTopic</methodName>
@@ -423,8 +423,6 @@ mod tests {
         assert_eq!(&method_name, "requestTopic");
     }
 
-    /// This test is currently failing
-    /// the code adapted from response_to_string is not varadic against multiple params
     #[test]
     fn test_parse_request_multiple_params() {
         // Example data taken from a ROS node connection negotation
