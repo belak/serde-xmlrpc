@@ -1,7 +1,5 @@
-use std::convert::TryFrom;
-
 use quick_xml::{events::Event, Reader, Writer};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize};
 use serde_transcode::transcode;
 
 mod error;
@@ -422,6 +420,7 @@ mod tests {
 
         let (method_name, arg) = request_from_str(&val).unwrap();
         assert_eq!(arg.get(0).unwrap().as_str().unwrap(), "/rosout");
+        assert_eq!(&method_name, "requestTopic");
     }
 
     /// This test is currently failing
