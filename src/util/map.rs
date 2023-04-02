@@ -40,7 +40,7 @@ where
         T: ?Sized + serde::Serialize,
     {
         self.writer.write_start_tag(b"member")?;
-        key.serialize(MapKeySerializer::new(&mut self.writer))?;
+        key.serialize(MapKeySerializer::new(self.writer))?;
         Ok(())
     }
 
@@ -48,7 +48,7 @@ where
     where
         T: ?Sized + serde::Serialize,
     {
-        value.serialize(ValueSerializer::new(&mut self.writer))?;
+        value.serialize(ValueSerializer::new(self.writer))?;
         self.writer.write_end_tag(b"member")?;
         Ok(())
     }

@@ -136,7 +136,7 @@ where
                         .read_text(e.name(), &mut buf)
                         .map_err(ParseError::from)?;
                     visitor.visit_byte_buf::<Self::Error>(
-                       BASE64_STANDARD.decode(&text).map_err(ParseError::from)?,
+                       BASE64_STANDARD.decode(text).map_err(ParseError::from)?,
                     )?
                 }
 

@@ -38,7 +38,7 @@ where
     where
         T: ?Sized + serde::Serialize,
     {
-        value.serialize(ValueSerializer::new(&mut self.writer))
+        value.serialize(ValueSerializer::new(self.writer))
     }
 
     fn end(self) -> Result<Self::Ok> {
