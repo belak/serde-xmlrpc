@@ -2,7 +2,7 @@
 //! Combine with your transport or server of choice for an easy and quick xmlrpc experience.
 
 use quick_xml::{events::Event, Reader, Writer};
-use serde::{Deserialize};
+use serde::Deserialize;
 use serde_transcode::transcode;
 
 mod error;
@@ -138,7 +138,7 @@ pub fn request_from_str(request: &str) -> Result<(String, Vec<Value>)> {
             let mut buf = Vec::new();
             let mut params = Vec::new();
             // Read each parameter into a Value
-            while let Ok(_) = reader.expect_tag(b"param", &mut buf) {
+            while reader.expect_tag(b"param", &mut buf).is_ok() {
                 // This feels wrong / inefficient, but was the best way I could come up with
                 // from looking at the general structure of this code:
                 let mut reader2 = Reader::from_str(&request[reader.buffer_position()..]);
