@@ -137,22 +137,39 @@ pub fn request_from_str(request: &str) -> Result<(String, Vec<Value>)> {
         Event::Start(e) if e.name() == b"params" => {
             let mut buf = Vec::new();
             let mut params = Vec::new();
-            // Read each parameter into a Value
-            while reader.expect_tag(b"param", &mut buf).is_ok() {
-                // This feels wrong / inefficient, but was the best way I could come up with
-                // from looking at the general structure of this code:
-                let mut reader2 = Reader::from_str(&request[reader.buffer_position()..]);
-                reader2.expand_empty_elements(true);
-                reader2.trim_text(true);
 
-                let mut deserializer = ValueDeserializer::new(reader2)?;
-                let serializer = value::Serializer::new();
-                let x = transcode(&mut deserializer, serializer)?;
-                params.push(x);
-                reader
-                    .read_to_end(b"param", &mut buf)
-                    .map_err(error::ParseError::from)?;
-            }
+            let params = loop {
+                break match reader
+                    .read_event(&mut buf)
+                    .map_err(error::ParseError::from)?
+                {
+                    // Read each parameter into a Value
+                    Event::Start(e) if e.name() == b"param" => {
+                        let mut buf = Vec::new();
+                        let mut deserializer = ValueDeserializer::new(reader)?;
+                        let serializer = value::Serializer::new();
+                        let x = transcode(&mut deserializer, serializer)?;
+                        params.push(x);
+
+                        // Pull the reader back out so we can verify the end tag.
+                        reader = deserializer.into_inner();
+
+                        reader
+                            .read_to_end(e.name(), &mut buf)
+                            .map_err(error::ParseError::from)?;
+
+                        continue;
+                    }
+
+                    // Once we see the relevant params end tag, we know we have all the params.
+                    Event::End(e) if e.name() == b"params" => params,
+                    e => return Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
+                };
+            };
+
+            // We can skip reading to the end of the params tag because if we're
+            // here, we've already hit the end tag.
+
             Ok((method_name, params))
         }
         e => Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
