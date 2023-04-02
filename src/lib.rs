@@ -1,3 +1,6 @@
+//! This library provides a basic API for serializing / deserializng xmlrpc.
+//! Combine with your transport or server of choice for an easy and quick xmlrpc experience.
+
 use quick_xml::{events::Event, Reader, Writer};
 use serde::{Deserialize};
 use serde_transcode::transcode;
@@ -11,6 +14,18 @@ use util::{ReaderExt, ValueDeserializer, ValueSerializer, WriterExt};
 pub use error::{Error, Fault, Result};
 pub use value::Value;
 
+/// Parses the body of an xmlrpc http request and attempts to convert it to the desired type.
+/// ```
+/// let val: String = serde_xmlrpc::response_from_str(
+/// r#"<?xml version="1.0" encoding="utf-8"?>
+/// <methodResponse>
+///  <params>
+///    <param><value><string>hello world</string></value></param>
+///  </params>
+/// </methodResponse>"#).unwrap();
+///
+/// assert_eq!(val, "hello world".to_string());
+/// ```
 pub fn response_from_str<T>(input: &str) -> Result<T>
 where
     T: serde::de::DeserializeOwned,
@@ -144,6 +159,12 @@ pub fn request_from_str(request: &str) -> Result<(String, Vec<Value>)> {
     }
 }
 
+/// Takes in the name of a method call and a list of parameters and attempts to convert them to a String
+/// which would be a valid body for an xmlrpc request.
+///
+/// ```
+/// let body = serde_xmlrpc::request_to_string("myMethod", vec![1.into(), "param2".into()]);
+/// ```
 pub fn request_to_string(name: &str, args: Vec<Value>) -> Result<String> {
     let mut writer = Writer::new(Vec::new());
 
@@ -170,6 +191,11 @@ pub fn request_to_string(name: &str, args: Vec<Value>) -> Result<String> {
     Ok(String::from_utf8(writer.into_inner()).map_err(error::EncodingError::from)?)
 }
 
+/// Attempts to parse an individual value out of a str.
+/// ```
+/// let x = serde_xmlrpc::value_from_str("<value><int>42</int></value>").unwrap().as_i32();
+/// assert_eq!(x, Some(42));
+/// ```
 pub fn value_from_str(input: &str) -> Result<Value> {
     let mut reader = Reader::from_str(input);
     reader.expand_empty_elements(true);
@@ -180,6 +206,12 @@ pub fn value_from_str(input: &str) -> Result<Value> {
     transcode(&mut deserializer, serializer)
 }
 
+/// Attempts to convert any data type which can be reprsented as an xmlrpc value into a String.
+/// ```
+/// let a = serde_xmlrpc::value_to_string(42);
+/// let b = serde_xmlrpc::value_to_string("Text");
+/// let c = serde_xmlrpc::value_to_string(false);
+/// ```
 pub fn value_to_string<I>(val: I) -> Result<String>
 where
     I: Into<Value>,

@@ -1,4 +1,4 @@
-use base64::encode as base64_encode;
+use base64::prelude::*;
 use quick_xml::{events::Event, Writer};
 use serde::forward_to_deserialize_any;
 
@@ -40,7 +40,7 @@ where
         T: ?Sized + serde::Serialize,
     {
         self.writer.write_start_tag(b"member")?;
-        key.serialize(MapKeySerializer::new(&mut self.writer))?;
+        key.serialize(MapKeySerializer::new(self.writer))?;
         Ok(())
     }
 
@@ -48,7 +48,7 @@ where
     where
         T: ?Sized + serde::Serialize,
     {
-        value.serialize(ValueSerializer::new(&mut self.writer))?;
+        value.serialize(ValueSerializer::new(self.writer))?;
         self.writer.write_end_tag(b"member")?;
         Ok(())
     }
@@ -189,7 +189,8 @@ where
     }
 
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok> {
-        self.writer.write_safe_tag(b"name", &base64_encode(v))
+        self.writer
+            .write_safe_tag(b"name", &BASE64_STANDARD.encode(v))
     }
 
     fn serialize_none(self) -> Result<Self::Ok> {

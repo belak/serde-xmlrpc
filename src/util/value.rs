@@ -1,4 +1,4 @@
-use base64::{decode as base64_decode, encode as base64_encode};
+use base64::prelude::*;
 use quick_xml::{events::Event, Reader, Writer};
 use serde::forward_to_deserialize_any;
 use std::convert::TryInto;
@@ -136,7 +136,7 @@ where
                         .read_text(e.name(), &mut buf)
                         .map_err(ParseError::from)?;
                     visitor.visit_byte_buf::<Self::Error>(
-                        base64_decode(&text).map_err(ParseError::from)?,
+                       BASE64_STANDARD.decode(text).map_err(ParseError::from)?,
                     )?
                 }
 
@@ -303,7 +303,8 @@ where
 
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok> {
         self.writer.write_start_tag(b"value")?;
-        self.writer.write_safe_tag(b"base64", &base64_encode(v))?;
+        self.writer
+            .write_safe_tag(b"base64", &BASE64_STANDARD.encode(v))?;
         self.writer.write_end_tag(b"value")?;
         Ok(())
     }
