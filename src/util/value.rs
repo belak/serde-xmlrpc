@@ -1,9 +1,13 @@
 use base64::prelude::*;
-use quick_xml::{events::Event, Reader, Writer};
+use quick_xml::{
+    events::{BytesStart, Event},
+    name::QName,
+    Reader, Writer,
+};
 use serde::forward_to_deserialize_any;
 use std::convert::TryInto;
 
-use crate::error::ParseError;
+use crate::error::{EncodingError, ParseError};
 use crate::util::{ReaderExt, WriterExt};
 use crate::{Error, Result};
 
@@ -11,42 +15,18 @@ use super::{MapDeserializer, MapSerializer};
 use super::{SeqDeserializer, SeqSerializer};
 
 #[doc(hidden)]
-pub struct Deserializer<B>
-where
-    B: std::io::BufRead,
-{
-    pub(crate) reader: Reader<B>,
-    buf: Vec<u8>,
+pub struct Deserializer<'a, 'r> {
+    pub(crate) reader: &'a mut Reader<&'r [u8]>,
 }
 
-impl<B> Deserializer<B>
-where
-    B: std::io::BufRead,
-{
-    pub fn new(reader: Reader<B>) -> Result<Self>
-    where
-        B: std::io::BufRead,
-    {
-        let mut ret = Deserializer {
-            reader,
-            buf: Vec::new(),
-        };
-        ret.reader.expect_tag(b"value", &mut ret.buf)?;
+impl<'a, 'r> Deserializer<'a, 'r> {
+    pub fn new(reader: &'a mut Reader<&'r [u8]>) -> Result<Self> {
+        let ret = Deserializer { reader };
         Ok(ret)
     }
-
-    pub fn into_inner(self) -> Reader<B>
-    where
-        B: std::io::BufRead,
-    {
-        self.reader
-    }
 }
 
-impl<'de, 'a, B> serde::Deserializer<'de> for &'a mut Deserializer<B>
-where
-    B: std::io::BufRead,
-{
+impl<'de, 'a, 'r> serde::Deserializer<'de> for Deserializer<'a, 'r> {
     type Error = Error;
 
     #[allow(clippy::cognitive_complexity)]
@@ -54,26 +34,25 @@ where
     where
         V: serde::de::Visitor<'de>,
     {
-        let ret = match self.reader.read_event(&mut self.buf) {
+        let ret = match self.reader.read_event() {
             // If we got text, this is a String value. This is an edge case
             // because it's valid to have a string value without the inner
             // "string" tag.
-            Ok(Event::Text(e)) => visitor.visit_string::<Self::Error>(
-                e.unescape_and_decode(&self.reader)
-                    .map_err(ParseError::from)?,
+            Ok(Event::Text(e)) => visitor.visit_str::<Self::Error>(
+                e.unescape()
+                    .map_err(ParseError::from)?.as_ref(),
             )?,
 
             // Alternatively, if we got the matching end tag, this is an empty
             // string value. Note that we need to return early here so the end
             // doesn't try to read the closing tag.
-            Ok(Event::End(ref e)) if e.name() == b"value" => return visitor.visit_str(""),
+            Ok(Event::End(ref e)) if e.name() == QName(b"value") => return visitor.visit_str(""),
 
             Ok(Event::Start(ref e)) => match e.name() {
-                b"int" | b"i4" | b"i8" => {
-                    let mut buf = Vec::new();
+                QName(b"int") | QName(b"i4") | QName(b"i8") => {
                     let text = self
                         .reader
-                        .read_text(e.name(), &mut buf)
+                        .read_text(e.name())
                         .map_err(ParseError::from)?;
 
                     let val: i64 = text.parse().map_err(ParseError::from)?;
@@ -89,74 +68,68 @@ where
                     }
                 }
 
-                b"boolean" => {
-                    let mut buf = Vec::new();
+                QName(b"boolean") => {
                     let text = self
                         .reader
-                        .read_text(e.name(), &mut buf)
+                        .read_text(e.name())
                         .map_err(ParseError::from)?;
                     match text.as_ref() {
                         "1" => visitor.visit_bool::<Self::Error>(true),
                         "0" => visitor.visit_bool::<Self::Error>(false),
-                        _ => return Err(ParseError::BooleanDecodeError(text).into()),
+                        _ => return Err(ParseError::BooleanDecodeError(text.into_owned()).into()),
                     }?
                 }
 
-                b"string" => {
-                    let mut buf = Vec::new();
-                    visitor.visit_string::<Self::Error>(
+                QName(b"string") => {
+                    visitor.visit_str::<Self::Error>(
                         self.reader
-                            .read_text(e.name(), &mut buf)
-                            .map_err(ParseError::from)?,
+                            .read_text(e.name())
+                            .map_err(ParseError::from)?.as_ref(),
                     )?
                 }
 
-                b"double" => {
-                    let mut buf = Vec::new();
+                QName(b"double") => {
                     let text = self
                         .reader
-                        .read_text(e.name(), &mut buf)
+                        .read_text(e.name())
                         .map_err(ParseError::from)?;
                     visitor.visit_f64::<Self::Error>(text.parse().map_err(ParseError::from)?)?
                 }
 
-                b"dateTime.iso8601" => {
-                    let mut buf = Vec::new();
-                    visitor.visit_string::<Self::Error>(
+                QName(b"dateTime.iso8601") => {
+                    visitor.visit_str::<Self::Error>(
                         self.reader
-                            .read_text(e.name(), &mut buf)
-                            .map_err(ParseError::from)?,
+                            .read_text(e.name())
+                            .map_err(ParseError::from)?.as_ref(),
                     )?
                 }
 
-                b"base64" => {
-                    let mut buf = Vec::new();
+                QName(b"base64") => {
                     let text = self
                         .reader
-                        .read_text(e.name(), &mut buf)
+                        .read_text(e.name())
                         .map_err(ParseError::from)?;
                     visitor.visit_byte_buf::<Self::Error>(
-                       BASE64_STANDARD.decode(text).map_err(ParseError::from)?,
+                       BASE64_STANDARD.decode(text.as_ref()).map_err(ParseError::from)?,
                     )?
                 }
 
-                b"struct" => visitor.visit_map(MapDeserializer::new(self, b"struct"))?,
+                QName(b"struct") => visitor.visit_map(MapDeserializer::new(self.reader, b"struct"))?,
 
-                b"array" => {
-                    visitor.visit_seq(SeqDeserializer::new(self, b"data", Some(b"array"))?)?
+                QName(b"array") => {
+                    visitor.visit_seq(SeqDeserializer::new(self.reader, QName(b"data"), Some(QName(b"array")))?)?
                 }
 
-                b"nil" => {
-                    let mut buf = Vec::new();
+                QName(b"nil") => {
                     self.reader
-                        .read_to_end(e.name(), &mut buf)
+                        .read_to_end(e.name())
                         .map_err(ParseError::from)?;
                     visitor.visit_unit::<Self::Error>()?
                 }
 
                 _ => {
                     return Err(ParseError::UnexpectedTag(
-                        String::from_utf8_lossy(e.name()).into(),
+                        String::from_utf8_lossy(e.name().into_inner()).into(),
                         "one of int|i4|i8|boolean|string|double|dateTime.iso8601|base64|struct|array|nil"
                             .into(),
                     )
@@ -185,7 +158,7 @@ where
         };
 
         self.reader
-            .read_to_end(b"value", &mut self.buf)
+            .read_to_end(QName(b"value"))
             .map_err(ParseError::from)?;
 
         Ok(ret)
@@ -231,10 +204,10 @@ where
     type SerializeStructVariant = MapSerializer<'a, W>;
 
     fn serialize_bool(self, v: bool) -> Result<Self::Ok> {
-        self.writer.write_start_tag(b"value")?;
+        self.writer.write_start_tag("value")?;
         self.writer
-            .write_safe_tag(b"boolean", if v { "1" } else { "0" })?;
-        self.writer.write_end_tag(b"value")?;
+            .write_safe_tag("boolean", if v { "1" } else { "0" })?;
+        self.writer.write_end_tag("value")?;
         Ok(())
     }
 
@@ -251,9 +224,9 @@ where
     }
 
     fn serialize_i64(self, v: i64) -> Result<Self::Ok> {
-        self.writer.write_start_tag(b"value")?;
-        self.writer.write_safe_tag(b"int", &v.to_string())?;
-        self.writer.write_end_tag(b"value")?;
+        self.writer.write_start_tag("value")?;
+        self.writer.write_safe_tag("int", &v.to_string())?;
+        self.writer.write_end_tag("value")?;
         Ok(())
     }
 
@@ -270,9 +243,9 @@ where
     }
 
     fn serialize_u64(self, v: u64) -> Result<Self::Ok> {
-        self.writer.write_start_tag(b"value")?;
-        self.writer.write_safe_tag(b"int", &v.to_string())?;
-        self.writer.write_end_tag(b"value")?;
+        self.writer.write_start_tag("value")?;
+        self.writer.write_safe_tag("int", &v.to_string())?;
+        self.writer.write_end_tag("value")?;
         Ok(())
     }
 
@@ -281,31 +254,31 @@ where
     }
 
     fn serialize_f64(self, v: f64) -> Result<Self::Ok> {
-        self.writer.write_start_tag(b"value")?;
-        self.writer.write_safe_tag(b"double", &v.to_string())?;
-        self.writer.write_end_tag(b"value")?;
+        self.writer.write_start_tag("value")?;
+        self.writer.write_safe_tag("double", &v.to_string())?;
+        self.writer.write_end_tag("value")?;
         Ok(())
     }
 
     fn serialize_char(self, v: char) -> Result<Self::Ok> {
-        self.writer.write_start_tag(b"value")?;
-        self.writer.write_tag(b"string", &v.to_string())?;
-        self.writer.write_end_tag(b"value")?;
+        self.writer.write_start_tag("value")?;
+        self.writer.write_tag("string", &v.to_string())?;
+        self.writer.write_end_tag("value")?;
         Ok(())
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok> {
-        self.writer.write_start_tag(b"value")?;
-        self.writer.write_tag(b"string", v)?;
-        self.writer.write_end_tag(b"value")?;
+        self.writer.write_start_tag("value")?;
+        self.writer.write_tag("string", v)?;
+        self.writer.write_end_tag("value")?;
         Ok(())
     }
 
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok> {
-        self.writer.write_start_tag(b"value")?;
+        self.writer.write_start_tag("value")?;
         self.writer
-            .write_safe_tag(b"base64", &BASE64_STANDARD.encode(v))?;
-        self.writer.write_end_tag(b"value")?;
+            .write_safe_tag("base64", &BASE64_STANDARD.encode(v))?;
+        self.writer.write_end_tag("value")?;
         Ok(())
     }
 
@@ -321,9 +294,11 @@ where
     }
 
     fn serialize_unit(self) -> Result<Self::Ok> {
-        self.writer.write_start_tag(b"value")?;
-        self.writer.write(b"<nil />").map_err(ParseError::from)?;
-        self.writer.write_end_tag(b"value")?;
+        self.writer.write_start_tag("value")?;
+        self.writer
+            .write_event(Event::Empty(BytesStart::new("nil")))
+            .map_err(EncodingError::from)?;
+        self.writer.write_end_tag("value")?;
         Ok(())
     }
 
@@ -415,8 +390,9 @@ where
     reader.expand_empty_elements(true);
     reader.trim_text(true);
 
-    let mut deserializer = Deserializer::new(reader)?;
-    T::deserialize(&mut deserializer)
+    reader.expect_tag(QName(b"value"))?;
+    let deserializer = Deserializer::new(&mut reader)?;
+    T::deserialize(deserializer)
 }
 
 #[doc(hidden)]
