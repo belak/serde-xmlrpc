@@ -99,6 +99,7 @@ pub enum ParseError {
 }
 
 /// Error while encoding XML.
+#[allow(clippy::enum_variant_names)]
 #[derive(ThisError, Debug)]
 pub enum EncodingError {
     #[error("io error: {0}")]
