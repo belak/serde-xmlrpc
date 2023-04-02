@@ -382,9 +382,9 @@ where
 
 #[doc(hidden)]
 #[allow(dead_code)]
-pub fn from_str<T>(val: &str) -> Result<T>
+pub fn from_str<'a, T>(val: &'a str) -> Result<T>
 where
-    T: serde::de::DeserializeOwned,
+    T: serde::de::Deserialize<'a>,
 {
     let mut reader = Reader::from_str(val);
     reader.expand_empty_elements(true);

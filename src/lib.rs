@@ -28,9 +28,9 @@ pub use value::Value;
 ///
 /// assert_eq!(val, "hello world".to_string());
 /// ```
-pub fn response_from_str<T>(input: &str) -> Result<T>
+pub fn response_from_str<'a, T>(input: &'a str) -> Result<T>
 where
-    T: serde::de::DeserializeOwned,
+    T: serde::de::Deserialize<'a>,
 {
     let mut reader = Reader::from_str(input);
     reader.expand_empty_elements(true);
