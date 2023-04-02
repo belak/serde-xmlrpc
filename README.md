@@ -1,6 +1,6 @@
 # serde-xmlrpc
 
-[![Build Status](https://img.shields.io/travis/belak/serde-xmlrpc)](https://travis-ci.org/belak/serde-xmlrpc)
+[![Build Status](https://github.com/belak/serde-xmlrpc/actions/workflows/rust.yml/badge.svg)](https://github.com/belak/serde-xmlrpc/actions/workflows/rust.yml)
 [![Crates.io](https://img.shields.io/crates/v/serde_xmlrpc)](https://crates.io/crates/serde_xmlrpc)
 [![Docs](https://img.shields.io/badge/docs-stable-blue)](https://docs.rs/serde_xmlrpc)
 
