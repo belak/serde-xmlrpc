@@ -88,6 +88,94 @@ where
     }
 }
 
+/// Expects an input string which is a valid xmlrpc request body, and parses out the method name and parameters from it.
+/// This function would typically be used by a server to parse incoming requests.
+///   * Returns a tuple of (method name, Arguments) if successful
+/// This does not parse the types of the arguments, as typically the server needs to resolve
+/// the method name before it can know the expected types.
+pub fn request_from_str(request: &str) -> Result<(String, Vec<Value>)> {
+    let mut reader = Reader::from_str(request);
+    reader.expand_empty_elements(true);
+    reader.trim_text(true);
+
+    // Search for methodCall start
+    let mut buf = Vec::new();
+    loop {
+        match reader
+            .read_event(&mut buf)
+            .map_err(error::ParseError::from)?
+        {
+            Event::Decl(_) => continue,
+            Event::Start(e) if e.name() == b"methodCall" => {
+                break;
+            }
+            e => return Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
+        };
+    }
+
+    // This code currently assumes that the <methodName> will always precede <params>
+    // in the xmlrpc request, I'm not certain that this is actually enforced by the
+    // specification, but could find not counter example where it wasn't true... -Carter
+
+    let method_name = match reader
+        .read_event(&mut buf)
+        .map_err(error::ParseError::from)?
+    {
+        Event::Start(e) if e.name() == b"methodName" => {
+            let mut buf = Vec::new();
+            reader
+                .read_text(e.name(), &mut buf)
+                .map_err(error::ParseError::from)?
+        }
+        e => return Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
+    };
+
+    match reader
+        .read_event(&mut buf)
+        .map_err(error::ParseError::from)?
+    {
+        Event::Start(e) if e.name() == b"params" => {
+            let mut buf = Vec::new();
+            let mut params = Vec::new();
+
+            let params = loop {
+                break match reader
+                    .read_event(&mut buf)
+                    .map_err(error::ParseError::from)?
+                {
+                    // Read each parameter into a Value
+                    Event::Start(e) if e.name() == b"param" => {
+                        let mut buf = Vec::new();
+                        let mut deserializer = ValueDeserializer::new(reader)?;
+                        let serializer = value::Serializer::new();
+                        let x = transcode(&mut deserializer, serializer)?;
+                        params.push(x);
+
+                        // Pull the reader back out so we can verify the end tag.
+                        reader = deserializer.into_inner();
+
+                        reader
+                            .read_to_end(e.name(), &mut buf)
+                            .map_err(error::ParseError::from)?;
+
+                        continue;
+                    }
+
+                    // Once we see the relevant params end tag, we know we have all the params.
+                    Event::End(e) if e.name() == b"params" => params,
+                    e => return Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
+                };
+            };
+
+            // We can skip reading to the end of the params tag because if we're
+            // here, we've already hit the end tag.
+
+            Ok((method_name, params))
+        }
+        e => Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
+    }
+}
+
 /// Takes in the name of a method call and a list of parameters and attempts to convert them to a String
 /// which would be a valid body for an xmlrpc request.
 ///
@@ -351,5 +439,71 @@ mod tests {
                 assert!(false);
             }
         }
+    }
+
+    #[test]
+    fn parse_value() {
+        let val: String = response_from_str(
+            r#"<?xml version="1.0" encoding="utf-8"?>
+            <methodResponse>
+              <params>
+                <param><value><string>hello world</string></value></param>
+              </params>
+            </methodResponse>"#,
+        )
+        .unwrap();
+
+        assert_eq!(val, "hello world".to_string());
+    }
+
+    #[test]
+    fn test_parse_request() {
+        // Example data taken from a ROS node connection negotation, and hand simplified for minimum case
+        let val = r#"<?xml version=\"1.0\"?>
+          <methodCall>
+            <methodName>requestTopic</methodName>
+            <params>
+              <param><value>/rosout</value></param>
+            </params>
+          </methodCall>"#;
+
+        let (method_name, arg) = request_from_str(&val).unwrap();
+        assert_eq!(arg.get(0).unwrap().as_str().unwrap(), "/rosout");
+        assert_eq!(&method_name, "requestTopic");
+    }
+
+    #[test]
+    fn test_parse_request_multiple_params() {
+        // Example data taken from a ROS node connection negotation
+        let val = r#"<?xml version=\"1.0\"?>
+          <methodCall>
+            <methodName>requestTopic</methodName>
+            <params>
+              <param><value>/rosout</value></param>
+              <param><value>/rosout</value></param>
+              <param><value><array><data><value><array><data><value>TCPROS</value></data></array></value></data></array></value></param>
+            </params>
+          </methodCall>"#;
+
+        let (method, vals) = request_from_str(val).unwrap();
+        assert_eq!(vals.len(), 3);
+        assert_eq!(&method, "requestTopic");
+        assert_eq!(vals.get(0).unwrap().as_str().unwrap(), "/rosout");
+        assert_eq!(vals.get(1).unwrap().as_str().unwrap(), "/rosout");
+        assert_eq!(
+            vals.get(2)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .get(0)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .get(0)
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "TCPROS"
+        );
     }
 }
