@@ -17,3 +17,6 @@ quick-xml = "0.17"
 thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde-transcode = "1.0"
+
+[dev-dependencies]
+reqwest = { version= "0.11", features = ["blocking"] }
