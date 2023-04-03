@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, convert::{TryInto, TryFrom}};
 
 use iso8601::DateTime;
 
@@ -131,11 +131,21 @@ impl Value {
     }
 }
 
-// Conversions into Value
+// Conversions into and from Value
 
 impl From<i32> for Value {
     fn from(other: i32) -> Self {
         Value::Int(other)
+    }
+}
+
+impl<'a> TryFrom<&'a Value> for &'a i32 {
+    type Error = ();
+    fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Int(i) => Ok(i),
+            _ => Err(())
+        }
     }
 }
 
@@ -145,15 +155,47 @@ impl From<i64> for Value {
     }
 }
 
+impl<'a> TryFrom<&'a Value> for &'a i64 {
+    type Error = ();
+    fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Int64(i) => Ok(i),
+            _ => Err(())
+        }
+    }
+}
+
 impl From<bool> for Value {
     fn from(other: bool) -> Self {
         Value::Bool(other)
     }
 }
 
+impl<'a> TryFrom<&'a Value> for &'a bool {
+    type Error = ();
+    fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Bool(i) => Ok(i),
+            _ => Err(())
+        }
+    }
+}
+
 impl From<String> for Value {
     fn from(other: String) -> Self {
         Value::String(other)
+    }
+}
+
+impl<'a> TryFrom<&'a Value> for &'a str {
+    type Error = ();
+
+    fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
+        if let Some(val) = value.as_str() {
+            Ok(val)
+        }else{
+            Err(())
+        }
     }
 }
 
@@ -169,9 +211,29 @@ impl From<f64> for Value {
     }
 }
 
+impl<'a> TryFrom<&'a Value> for &'a f64 {
+    type Error = ();
+    fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Double(i) => Ok(i),
+            _ => Err(())
+        }
+    }
+}
+
 impl From<DateTime> for Value {
     fn from(other: DateTime) -> Self {
         Value::DateTime(other)
+    }
+}
+
+impl<'a> TryFrom<&'a Value> for &'a DateTime {
+    type Error = ();
+    fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::DateTime(i) => Ok(i),
+            _ => Err(())
+        }
     }
 }
 
@@ -181,9 +243,29 @@ impl From<Vec<Value>> for Value {
     }
 }
 
+impl<'a> TryFrom<&'a Value> for &'a Vec<Value> {
+    type Error = ();
+    fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Array(i) => Ok(i),
+            _ => Err(())
+        }
+    }
+}
+
 impl From<BTreeMap<String, Value>> for Value {
     fn from(other: BTreeMap<String, Value>) -> Value {
         Value::Struct(other)
+    }
+}
+
+impl<'a> TryFrom<&'a Value> for &'a BTreeMap<String, Value> {
+    type Error = ();
+    fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Struct(i) => Ok(i),
+            _ => Err(())
+        }
     }
 }
 
@@ -192,3 +274,82 @@ impl From<Vec<u8>> for Value {
         Value::Base64(other)
     }
 }
+
+impl<'a> TryFrom<&'a Value> for &'a Vec<u8> {
+    type Error = ();
+    fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Base64(i) => Ok(i),
+            _ => Err(())
+        }
+    }
+}
+
+
+/// Trait allowing for tuple destructuring iter of Value into a tuple
+trait TryCollectValue<'a,T> {
+    fn try_collect_value(&'a mut self) -> Option<T>;
+}
+
+// Due to lack of variadic traits in Rust we have do this kinda hacky
+// See https://stackoverflow.com/questions/38863781/how-to-create-a-tuple-from-a-vector
+// and https://gist.github.com/PoignardAzur/aea33f28e2c58ffe1a93b8f8d3c58667
+
+// We define a macro that actually create the implementation of our TryCollect trait for
+// a tuple of a given size.
+macro_rules! impl_try_collect_value_tuple {
+    () => { };
+    ($A:ident $($I:ident)*) => {
+        impl_try_collect_value_tuple!($($I)*);
+
+        impl<$A: Iterator> TryCollectValue<($A::Item, $($I::Item),*)> for $A {
+            fn try_collect_value(&mut self) -> Option<($A::Item, $($I::Item),*)> {
+                let r = (try_opt!(self.next()),
+                         // hack: we need to use $I in the expasion
+                         $({ let a: $I::Item = try_opt!(self.next()); a}),* );
+                Some(r)
+            }
+        }
+    }
+}
+// Helper macro
+macro_rules! try_opt {
+    ($e:expr) => (match $e { Some(e) => e, None => return None })
+}
+
+// impl_try_collect_value_tuple!(A B);
+
+impl<'a, A: TryFrom<&'a Value>, B: TryFrom<&'a Value>, I: Iterator<Item = &'a Value>> TryCollectValue<'a, (A, B)> for I
+{
+    fn try_collect_value(&'a mut self) -> Option<(A, B)> {
+        let a = self.next()?.try_into().ok()?;
+        let b = self.next()?.try_into().ok()?;
+        Some((a,b))
+    }
+
+}
+
+
+// We then invoke the macro for each size of tuple we want to support,
+// convention in Rust is to support up to 12
+
+// impl_try_collect_value_tuple!(A);
+// impl_try_collect_value_tuple!(A A);
+// impl_try_collect_value_tuple!(A A A);
+
+#[cfg(test)]
+mod test {
+    use crate::Value;
+    use super::TryCollectValue;
+
+    #[test]
+    fn test_tuple_destructure() {
+        let vec = vec![Value::Int(1), Value::String("2".into(), )];
+
+        let (a, b): (&i32, &str) = vec.iter().try_collect_value().unwrap();
+        assert_eq!(*a, 1);
+        assert_eq!(b, "2");
+    }
+}
+
+

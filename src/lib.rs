@@ -242,6 +242,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::convert::TryInto;
+
     use super::*;
 
     #[test]
@@ -488,8 +490,14 @@ mod tests {
         let (method, vals) = request_from_str(val).unwrap();
         assert_eq!(vals.len(), 3);
         assert_eq!(&method, "requestTopic");
+
+        // Test destructuring Vec<Value> into tuple
+        // let (a, b, c): (String, String, Vec<Vec<String>>) = vals.iter().try_collect_value().unwrap();
+
+
         assert_eq!(vals.get(0).unwrap().as_str().unwrap(), "/rosout");
         assert_eq!(vals.get(1).unwrap().as_str().unwrap(), "/rosout");
+
         assert_eq!(
             vals.get(2)
                 .unwrap()
