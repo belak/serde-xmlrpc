@@ -1,7 +1,7 @@
 //! This library provides a basic API for serializing / deserializng xmlrpc.
 //! Combine with your transport or server of choice for an easy and quick xmlrpc experience.
 
-use quick_xml::{events::Event, Reader, Writer};
+use quick_xml::{events::Event, name::QName, Reader, Writer};
 use serde::Deserialize;
 use serde_transcode::transcode;
 
@@ -26,9 +26,9 @@ pub use value::Value;
 ///
 /// assert_eq!(val, "hello world".to_string());
 /// ```
-pub fn response_from_str<T>(input: &str) -> Result<T>
+pub fn response_from_str<'a, T>(input: &'a str) -> Result<T>
 where
-    T: serde::de::DeserializeOwned,
+    T: serde::de::Deserialize<'a>,
 {
     let mut reader = Reader::from_str(input);
     reader.expand_empty_elements(true);
@@ -36,50 +36,42 @@ where
 
     // Check the first event. This will determine if we're loading a Fault or a
     // Value.
-    let mut buf = Vec::new();
     loop {
-        match reader
-            .read_event(&mut buf)
-            .map_err(error::ParseError::from)?
-        {
+        match reader.read_event().map_err(error::ParseError::from)? {
             Event::Decl(_) => continue,
-            Event::Start(e) if e.name() == b"methodResponse" => {
+            Event::Start(e) if e.name() == QName(b"methodResponse") => {
                 break;
             }
             e => return Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
         };
     }
 
-    match reader
-        .read_event(&mut buf)
-        .map_err(error::ParseError::from)?
-    {
-        Event::Start(e) if e.name() == b"params" => {
-            let mut buf = Vec::new();
-            reader.expect_tag(b"param", &mut buf)?;
-            let mut deserializer = ValueDeserializer::new(reader)?;
-            let ret = T::deserialize(&mut deserializer)?;
-            let mut reader = deserializer.into_inner();
+    match reader.read_event().map_err(error::ParseError::from)? {
+        Event::Start(e) if e.name() == QName(b"params") => {
+            reader.expect_tag(QName(b"param"))?;
+            reader.expect_tag(QName(b"value"))?;
+            let deserializer = ValueDeserializer::new(&mut reader)?;
+            let ret = T::deserialize(deserializer)?;
             reader
-                .read_to_end(b"param", &mut buf)
+                .read_to_end(QName(b"param"))
                 .map_err(error::ParseError::from)?;
             reader
-                .read_to_end(e.name(), &mut buf)
+                .read_to_end(e.name())
                 .map_err(error::ParseError::from)?;
             Ok(ret)
         }
-        Event::Start(e) if e.name() == b"fault" => {
+        Event::Start(e) if e.name() == QName(b"fault") => {
             // The inner portion of a fault is just a Value tag, so we
             // deserialize it from a value.
-            let mut deserializer = ValueDeserializer::new(reader)?;
-            let fault: Fault = Fault::deserialize(&mut deserializer)?;
+            reader.expect_tag(QName(b"value"))?;
+            let deserializer = ValueDeserializer::new(&mut reader)?;
+            let fault: Fault = Fault::deserialize(deserializer)?;
 
             // Pull the reader back out so we can verify the end tag.
-            let mut reader = deserializer.into_inner();
+            //let mut reader = deserializer.into_inner();
 
-            let mut buf = Vec::new();
             reader
-                .read_to_end(e.name(), &mut buf)
+                .read_to_end(e.name())
                 .map_err(error::ParseError::from)?;
 
             Err(fault.into())
@@ -99,14 +91,10 @@ pub fn request_from_str(request: &str) -> Result<(String, Vec<Value>)> {
     reader.trim_text(true);
 
     // Search for methodCall start
-    let mut buf = Vec::new();
     loop {
-        match reader
-            .read_event(&mut buf)
-            .map_err(error::ParseError::from)?
-        {
+        match reader.read_event().map_err(error::ParseError::from)? {
             Event::Decl(_) => continue,
-            Event::Start(e) if e.name() == b"methodCall" => {
+            Event::Start(e) if e.name() == QName(b"methodCall") => {
                 break;
             }
             e => return Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
@@ -117,52 +105,36 @@ pub fn request_from_str(request: &str) -> Result<(String, Vec<Value>)> {
     // in the xmlrpc request, I'm not certain that this is actually enforced by the
     // specification, but could find not counter example where it wasn't true... -Carter
 
-    let method_name = match reader
-        .read_event(&mut buf)
-        .map_err(error::ParseError::from)?
-    {
-        Event::Start(e) if e.name() == b"methodName" => {
-            let mut buf = Vec::new();
-            reader
-                .read_text(e.name(), &mut buf)
-                .map_err(error::ParseError::from)?
-        }
+    let method_name = match reader.read_event().map_err(error::ParseError::from)? {
+        Event::Start(e) if e.name() == QName(b"methodName") => reader
+            .read_text(e.name())
+            .map_err(error::ParseError::from)?,
         e => return Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
     };
 
-    match reader
-        .read_event(&mut buf)
-        .map_err(error::ParseError::from)?
-    {
-        Event::Start(e) if e.name() == b"params" => {
-            let mut buf = Vec::new();
+    match reader.read_event().map_err(error::ParseError::from)? {
+        Event::Start(e) if e.name() == QName(b"params") => {
             let mut params = Vec::new();
 
             let params = loop {
-                break match reader
-                    .read_event(&mut buf)
-                    .map_err(error::ParseError::from)?
-                {
+                break match reader.read_event().map_err(error::ParseError::from)? {
                     // Read each parameter into a Value
-                    Event::Start(e) if e.name() == b"param" => {
-                        let mut buf = Vec::new();
-                        let mut deserializer = ValueDeserializer::new(reader)?;
+                    Event::Start(e) if e.name() == QName(b"param") => {
+                        reader.expect_tag(QName(b"value"))?;
+                        let deserializer = ValueDeserializer::new(&mut reader)?;
                         let serializer = value::Serializer::new();
-                        let x = transcode(&mut deserializer, serializer)?;
+                        let x = transcode(deserializer, serializer)?;
                         params.push(x);
 
-                        // Pull the reader back out so we can verify the end tag.
-                        reader = deserializer.into_inner();
-
                         reader
-                            .read_to_end(e.name(), &mut buf)
+                            .read_to_end(e.name())
                             .map_err(error::ParseError::from)?;
 
                         continue;
                     }
 
                     // Once we see the relevant params end tag, we know we have all the params.
-                    Event::End(e) if e.name() == b"params" => params,
+                    Event::End(e) if e.name() == QName(b"params") => params,
                     e => return Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
                 };
             };
@@ -170,7 +142,7 @@ pub fn request_from_str(request: &str) -> Result<(String, Vec<Value>)> {
             // We can skip reading to the end of the params tag because if we're
             // here, we've already hit the end tag.
 
-            Ok((method_name, params))
+            Ok((method_name.into_owned(), params))
         }
         e => Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
     }
@@ -185,25 +157,23 @@ pub fn request_from_str(request: &str) -> Result<(String, Vec<Value>)> {
 pub fn request_to_string(name: &str, args: Vec<Value>) -> Result<String> {
     let mut writer = Writer::new(Vec::new());
 
-    writer
-        .write(br#"<?xml version="1.0" encoding="utf-8"?>"#)
-        .map_err(error::EncodingError::from)?;
+    writer.write_decl()?;
 
-    writer.write_start_tag(b"methodCall")?;
-    writer.write_tag(b"methodName", name)?;
+    writer.write_start_tag("methodCall")?;
+    writer.write_tag("methodName", name)?;
 
-    writer.write_start_tag(b"params")?;
+    writer.write_start_tag("params")?;
     for value in args {
-        writer.write_start_tag(b"param")?;
+        writer.write_start_tag("param")?;
 
         let deserializer = value::Deserializer::from_value(value);
         let serializer = ValueSerializer::new(&mut writer);
         transcode(deserializer, serializer)?;
 
-        writer.write_end_tag(b"param")?;
+        writer.write_end_tag("param")?;
     }
-    writer.write_end_tag(b"params")?;
-    writer.write_end_tag(b"methodCall")?;
+    writer.write_end_tag("params")?;
+    writer.write_end_tag("methodCall")?;
 
     Ok(String::from_utf8(writer.into_inner()).map_err(error::EncodingError::from)?)
 }
@@ -218,9 +188,10 @@ pub fn value_from_str(input: &str) -> Result<Value> {
     reader.expand_empty_elements(true);
     reader.trim_text(true);
 
-    let mut deserializer = ValueDeserializer::new(reader)?;
+    reader.expect_tag(QName(b"value"))?;
+    let deserializer = ValueDeserializer::new(&mut reader)?;
     let serializer = value::Serializer::new();
-    transcode(&mut deserializer, serializer)
+    transcode(deserializer, serializer)
 }
 
 /// Attempts to convert any data type which can be reprsented as an xmlrpc value into a String.

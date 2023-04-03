@@ -1,5 +1,5 @@
 use base64::prelude::*;
-use quick_xml::{events::Event, Writer};
+use quick_xml::{events::Event, name::QName, Reader, Writer};
 use serde::forward_to_deserialize_any;
 
 use crate::error::ParseError;
@@ -22,8 +22,8 @@ where
 {
     pub fn new(writer: &'a mut Writer<W>) -> Result<Self> {
         let ret = MapSerializer { writer };
-        ret.writer.write_start_tag(b"value")?;
-        ret.writer.write_start_tag(b"struct")?;
+        ret.writer.write_start_tag("value")?;
+        ret.writer.write_start_tag("struct")?;
         Ok(ret)
     }
 }
@@ -39,7 +39,7 @@ where
     where
         T: ?Sized + serde::Serialize,
     {
-        self.writer.write_start_tag(b"member")?;
+        self.writer.write_start_tag("member")?;
         key.serialize(MapKeySerializer::new(self.writer))?;
         Ok(())
     }
@@ -49,13 +49,13 @@ where
         T: ?Sized + serde::Serialize,
     {
         value.serialize(ValueSerializer::new(self.writer))?;
-        self.writer.write_end_tag(b"member")?;
+        self.writer.write_end_tag("member")?;
         Ok(())
     }
 
     fn end(self) -> Result<Self::Ok> {
-        self.writer.write_end_tag(b"struct")?;
-        self.writer.write_end_tag(b"value")?;
+        self.writer.write_end_tag("struct")?;
+        self.writer.write_end_tag("value")?;
         Ok(())
     }
 }
@@ -136,7 +136,7 @@ where
 
     fn serialize_bool(self, v: bool) -> Result<Self::Ok> {
         self.writer
-            .write_safe_tag(b"name", if v { "1" } else { "0" })?;
+            .write_safe_tag("name", if v { "1" } else { "0" })?;
         Ok(())
     }
 
@@ -153,7 +153,7 @@ where
     }
 
     fn serialize_i64(self, v: i64) -> Result<Self::Ok> {
-        self.writer.write_safe_tag(b"name", &v.to_string())
+        self.writer.write_safe_tag("name", &v.to_string())
     }
 
     fn serialize_u8(self, v: u8) -> Result<Self::Ok> {
@@ -169,7 +169,7 @@ where
     }
 
     fn serialize_u64(self, v: u64) -> Result<Self::Ok> {
-        self.writer.write_safe_tag(b"name", &v.to_string())
+        self.writer.write_safe_tag("name", &v.to_string())
     }
 
     fn serialize_f32(self, v: f32) -> Result<Self::Ok> {
@@ -177,20 +177,20 @@ where
     }
 
     fn serialize_f64(self, v: f64) -> Result<Self::Ok> {
-        self.writer.write_safe_tag(b"name", &v.to_string())
+        self.writer.write_safe_tag("name", &v.to_string())
     }
 
     fn serialize_char(self, v: char) -> Result<Self::Ok> {
-        self.writer.write_safe_tag(b"name", &v.to_string())
+        self.writer.write_safe_tag("name", &v.to_string())
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok> {
-        self.writer.write_tag(b"name", v)
+        self.writer.write_tag("name", v)
     }
 
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok> {
         self.writer
-            .write_safe_tag(b"name", &BASE64_STANDARD.encode(v))
+            .write_safe_tag("name", &BASE64_STANDARD.encode(v))
     }
 
     fn serialize_none(self) -> Result<Self::Ok> {
@@ -291,50 +291,35 @@ fn key_must_be_a_string() -> Error {
 }
 
 #[doc(hidden)]
-pub struct MapDeserializer<'a, R>
-where
-    R: std::io::BufRead,
-{
-    inner: &'a mut ValueDeserializer<R>,
-    buf: Vec<u8>,
+pub struct MapDeserializer<'a, 'r> {
+    reader: &'a mut Reader<&'r [u8]>,
     end: &'a [u8],
 }
 
-impl<'a, R> MapDeserializer<'a, R>
-where
-    R: std::io::BufRead,
-{
-    pub fn new(inner: &'a mut ValueDeserializer<R>, end: &'a [u8]) -> Self {
-        MapDeserializer {
-            inner,
-            buf: Vec::new(),
-            end,
-        }
+impl<'a, 'r> MapDeserializer<'a, 'r> {
+    pub fn new(reader: &'a mut Reader<&'r [u8]>, end: &'a [u8]) -> Self {
+        MapDeserializer { reader, end }
     }
 }
 
-impl<'de, 'a, R> serde::de::MapAccess<'de> for MapDeserializer<'a, R>
-where
-    R: std::io::BufRead,
-{
+impl<'de, 'a, 'r> serde::de::MapAccess<'de> for MapDeserializer<'a, 'r> {
     type Error = Error;
 
     fn next_key_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
     where
         T: serde::de::DeserializeSeed<'de>,
     {
-        match self.inner.reader.read_event(&mut self.buf) {
+        match self.reader.read_event() {
             // The base case is that we found a closing tag for the tag we were
             // looking for.
-            Ok(Event::End(ref e)) if e.name() == self.end => Ok(None),
+            Ok(Event::End(ref e)) if e.name() == QName(self.end) => Ok(None),
 
             // If we got a member start tag, we know there's a key and value
             // coming.
-            Ok(Event::Start(ref e)) if e.name() == b"member" => {
-                let mut buf = Vec::new();
-                self.inner.reader.expect_tag(b"name", &mut buf)?;
+            Ok(Event::Start(ref e)) if e.name() == QName(b"member") => {
+                self.reader.expect_tag(QName(b"name"))?;
                 Ok(Some(seed.deserialize(MapKeyDeserializer::new(
-                    &mut *self.inner,
+                    self.reader,
                     b"name",
                 ))?))
             }
@@ -349,18 +334,16 @@ where
     where
         T: serde::de::DeserializeSeed<'de>,
     {
-        let ret = match self.inner.reader.read_event(&mut self.buf) {
-            Ok(Event::Start(ref e)) if e.name() == b"value" => {
-                Ok(seed.deserialize(&mut *self.inner)?)
+        let ret = match self.reader.read_event() {
+            Ok(Event::Start(ref e)) if e.name() == QName(b"value") => {
+                Ok(seed.deserialize(ValueDeserializer::new(self.reader)?)?)
             }
             Ok(e) => Err(ParseError::UnexpectedEvent(format!("map value read: {:?}", e)).into()),
             Err(e) => Err(ParseError::from(e).into()),
         };
 
-        let mut buf = Vec::new();
-        self.inner
-            .reader
-            .read_to_end(b"member", &mut buf)
+        self.reader
+            .read_to_end(QName(b"member"))
             .map_err(ParseError::from)?;
 
         ret
@@ -368,42 +351,29 @@ where
 }
 
 #[doc(hidden)]
-pub struct MapKeyDeserializer<'a, B>
-where
-    B: std::io::BufRead,
-{
-    inner: &'a mut ValueDeserializer<B>,
+pub struct MapKeyDeserializer<'a, 'r> {
+    reader: &'a mut Reader<&'r [u8]>,
     end: &'a [u8],
 }
 
-impl<'a, B> MapKeyDeserializer<'a, B>
-where
-    B: std::io::BufRead,
-{
-    pub fn new(inner: &'a mut ValueDeserializer<B>, end: &'a [u8]) -> Self
-    where
-        B: std::io::BufRead,
-    {
-        MapKeyDeserializer { inner, end }
+impl<'a, 'r> MapKeyDeserializer<'a, 'r> {
+    pub fn new(reader: &'a mut Reader<&'r [u8]>, end: &'a [u8]) -> Self {
+        MapKeyDeserializer { reader, end }
     }
 }
 
-impl<'de, 'a, B> serde::Deserializer<'de> for MapKeyDeserializer<'a, B>
-where
-    B: std::io::BufRead,
-{
+impl<'de, 'a, 'r> serde::Deserializer<'de> for MapKeyDeserializer<'a, 'r> {
     type Error = Error;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
     where
         V: serde::de::Visitor<'de>,
     {
-        let mut buf = Vec::new();
         visitor.visit_string(
-            self.inner
-                .reader
-                .read_text(self.end, &mut buf)
-                .map_err(ParseError::from)?,
+            self.reader
+                .read_text(QName(self.end))
+                .map_err(ParseError::from)?
+                .into(),
         )
     }
 

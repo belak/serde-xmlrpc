@@ -1,4 +1,5 @@
-use quick_xml::{events::Event, Writer};
+use quick_xml::Reader;
+use quick_xml::{events::Event, name::QName, Writer};
 
 use crate::error::ParseError;
 use crate::util::{ReaderExt, WriterExt};
@@ -20,9 +21,9 @@ where
 {
     pub fn new(writer: &'a mut Writer<W>) -> Result<Self> {
         let ret = SeqSerializer { writer };
-        ret.writer.write_start_tag(b"value")?;
-        ret.writer.write_start_tag(b"array")?;
-        ret.writer.write_start_tag(b"data")?;
+        ret.writer.write_start_tag("value")?;
+        ret.writer.write_start_tag("array")?;
+        ret.writer.write_start_tag("data")?;
         Ok(ret)
     }
 }
@@ -42,9 +43,9 @@ where
     }
 
     fn end(self) -> Result<Self::Ok> {
-        self.writer.write_end_tag(b"data")?;
-        self.writer.write_end_tag(b"array")?;
-        self.writer.write_end_tag(b"value")?;
+        self.writer.write_end_tag("data")?;
+        self.writer.write_end_tag("array")?;
+        self.writer.write_end_tag("value")?;
 
         Ok(())
     }
@@ -107,61 +108,47 @@ where
 }
 
 #[doc(hidden)]
-pub struct SeqDeserializer<'a, R>
-where
-    R: std::io::BufRead,
-{
-    inner: &'a mut ValueDeserializer<R>,
-    buf: Vec<u8>,
-    end: &'a [u8],
-    end_maybe: Option<&'a [u8]>,
+pub struct SeqDeserializer<'a, 'r> {
+    reader: &'a mut Reader<&'r [u8]>,
+    end: QName<'a>,
+    end_maybe: Option<QName<'a>>,
 }
 
-impl<'a, R> SeqDeserializer<'a, R>
-where
-    R: std::io::BufRead,
-{
+impl<'a, 'r> SeqDeserializer<'a, 'r> {
     pub fn new(
-        inner: &'a mut ValueDeserializer<R>,
-        end: &'a [u8],
-        end_maybe: Option<&'a [u8]>,
+        reader: &'a mut Reader<&'r [u8]>,
+        end: QName<'a>,
+        end_maybe: Option<QName<'a>>,
     ) -> Result<Self> {
-        let mut ret = SeqDeserializer {
-            inner,
-            buf: Vec::new(),
+        let ret = SeqDeserializer {
+            reader,
             end,
             end_maybe,
         };
 
-        ret.inner.reader.expect_tag(ret.end, &mut ret.buf)?;
+        ret.reader.expect_tag(ret.end)?;
 
         Ok(ret)
     }
 }
 
-impl<'de, 'a, R> serde::de::SeqAccess<'de> for SeqDeserializer<'a, R>
-where
-    R: std::io::BufRead,
-{
+impl<'de, 'a, 'r> serde::de::SeqAccess<'de> for SeqDeserializer<'a, 'r> {
     type Error = Error;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
     where
         T: serde::de::DeserializeSeed<'de>,
     {
-        match self.inner.reader.read_event(&mut self.buf) {
+        match self.reader.read_event() {
             Ok(Event::End(ref e)) if e.name() == self.end => {
                 if let Some(end) = self.end_maybe {
-                    self.inner
-                        .reader
-                        .read_to_end(end, &mut self.buf)
-                        .map_err(ParseError::from)?;
+                    self.reader.read_to_end(end).map_err(ParseError::from)?;
                 }
                 Ok(None)
             }
-            Ok(Event::Start(ref e)) if e.name() == b"value" => {
-                Ok(Some(seed.deserialize(&mut *self.inner)?))
-            }
+            Ok(Event::Start(ref e)) if e.name() == QName(b"value") => Ok(Some(
+                seed.deserialize(ValueDeserializer::new(self.reader)?)?,
+            )),
             Ok(_) => Err(ParseError::UnexpectedEvent("one of value".to_string()).into()),
             Err(e) => Err(ParseError::from(e).into()),
         }
