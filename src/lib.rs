@@ -12,7 +12,7 @@ mod value;
 use util::{ReaderExt, ValueDeserializer, ValueSerializer, WriterExt};
 
 pub use error::{Error, Fault, Result};
-pub use value::{TryCollectValue, Value};
+pub use value::{to_value, TryCollectValue, Value};
 
 /// Parses the body of an xmlrpc http request and attempts to convert it to the desired type.
 /// ```

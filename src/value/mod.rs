@@ -8,6 +8,30 @@ pub mod ser;
 pub use de::Deserializer;
 pub use ser::Serializer;
 
+/// Convert a `T` into `serde_xmlrpc::Value` which is an enum that can represent
+/// any valid JSON data.
+///
+/// # Example
+///
+/// ```
+/// #[derive(serde::Serialize)]
+/// struct Custom {
+///     field: i32,
+/// }
+///
+/// let param = Custom {
+///     field: 42
+/// };
+///
+/// let _value = serde_xmlrpc::to_value(param).unwrap();
+/// ```
+pub fn to_value<T>(value: T) -> crate::Result<Value>
+where
+    T: serde::Serialize,
+{
+    value.serialize(Serializer)
+}
+
 /// Represents any single valid xmlrpc "Value"
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
