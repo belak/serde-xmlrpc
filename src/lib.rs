@@ -428,30 +428,13 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_request() {
-        // Example data taken from a ROS node connection negotation, and hand simplified for minimum case
-        let val = r#"<?xml version=\"1.0\"?>
-          <methodCall>
-            <methodName>requestTopic</methodName>
-            <params>
-              <param><value>/rosout</value></param>
-            </params>
-          </methodCall>"#;
-
-        let (method_name, arg) = request_from_str(&val).unwrap();
-        assert_eq!(arg.get(0).unwrap().as_str().unwrap(), "/rosout");
-        assert_eq!(&method_name, "requestTopic");
-    }
-
-    #[test]
     fn test_parse_request_multiple_params() {
-        // Example data taken from a ROS node connection negotation
         let val = r#"<?xml version=\"1.0\"?>
           <methodCall>
             <methodName>requestTopic</methodName>
             <params>
               <param><value>/rosout</value></param>
-              <param><value>/rosout</value></param>
+              <param><value><int>42</int></value></param>
             </params>
           </methodCall>"#;
 
@@ -459,9 +442,9 @@ mod tests {
         assert_eq!(vals.len(), 2);
         assert_eq!(&method, "requestTopic");
 
-        let (a, b): (String, String) = vals.iter().try_collect_value().unwrap();
+        let (a, b): (String, i32) = vals.iter().try_collect_value().unwrap();
 
         assert_eq!(a, "/rosout");
-        assert_eq!(b, "/rosout");
+        assert_eq!(b, 42);
     }
 }
