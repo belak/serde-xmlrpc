@@ -1,8 +1,6 @@
 //! This library provides a basic API for serializing / deserializng xmlrpc.
 //! Combine with your transport or server of choice for an easy and quick xmlrpc experience.
 
-use std::io::Write;
-
 use quick_xml::{events::Event, name::QName, Reader, Writer};
 use serde::Deserialize;
 use serde_transcode::transcode;
@@ -54,7 +52,6 @@ where
             reader.expect_tag(QName(b"value"))?;
             let deserializer = ValueDeserializer::new(&mut reader)?;
             let ret = T::deserialize(deserializer)?;
-            //let mut reader = deserializer.into_inner();
             reader
                 .read_to_end(QName(b"param"))
                 .map_err(error::ParseError::from)?;
@@ -129,9 +126,6 @@ pub fn request_from_str(request: &str) -> Result<(String, Vec<Value>)> {
                         let x = transcode(deserializer, serializer)?;
                         params.push(x);
 
-                        // Pull the reader back out so we can verify the end tag.
-                        //reader = deserializer.into_inner();
-
                         reader
                             .read_to_end(e.name())
                             .map_err(error::ParseError::from)?;
@@ -161,11 +155,9 @@ pub fn request_from_str(request: &str) -> Result<(String, Vec<Value>)> {
 /// let body = serde_xmlrpc::request_to_string("myMethod", vec![1.into(), "param2".into()]);
 /// ```
 pub fn request_to_string(name: &str, args: Vec<Value>) -> Result<String> {
-    let mut buf = Vec::new();
-    buf.write(br#"<?xml version="1.0" encoding="utf-8"?>"#)
-        .map_err(error::EncodingError::from)?;
+    let mut writer = Writer::new(Vec::new());
 
-    let mut writer = Writer::new(buf);
+    writer.write_decl()?;
 
     writer.write_start_tag("methodCall")?;
     writer.write_tag("methodName", name)?;

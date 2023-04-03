@@ -1,4 +1,4 @@
-use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
+use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::name::QName;
 use quick_xml::{Reader, Writer};
 
@@ -71,6 +71,7 @@ pub(crate) trait WriterExt {
     }
 
     // Building blocks
+    fn write_decl(&mut self) -> Result<()>;
     fn write_start_tag(&mut self, tag: &str) -> Result<()>;
     fn write_end_tag(&mut self, tag: &str) -> Result<()>;
     fn write_text(&mut self, text: &str) -> Result<()>;
@@ -81,6 +82,12 @@ impl<W> WriterExt for Writer<W>
 where
     W: std::io::Write,
 {
+    fn write_decl(&mut self) -> Result<()> {
+        self.write_event(Event::Decl(BytesDecl::new("1.0", Some("utf-8"), None)))
+            .map_err(EncodingError::from)?;
+        Ok(())
+    }
+
     fn write_start_tag(&mut self, tag: &str) -> Result<()> {
         self.write_event(Event::Start(BytesStart::new(tag)))
             .map_err(EncodingError::from)?;
