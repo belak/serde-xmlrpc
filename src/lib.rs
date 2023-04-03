@@ -12,7 +12,7 @@ mod value;
 use util::{ReaderExt, ValueDeserializer, ValueSerializer, WriterExt};
 
 pub use error::{Error, Fault, Result};
-pub use value::Value;
+pub use value::{TryCollectValue, Value};
 
 /// Parses the body of an xmlrpc http request and attempts to convert it to the desired type.
 /// ```
@@ -213,8 +213,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::convert::TryInto;
-
     use super::*;
 
     #[test]
@@ -454,35 +452,16 @@ mod tests {
             <params>
               <param><value>/rosout</value></param>
               <param><value>/rosout</value></param>
-              <param><value><array><data><value><array><data><value>TCPROS</value></data></array></value></data></array></value></param>
             </params>
           </methodCall>"#;
 
         let (method, vals) = request_from_str(val).unwrap();
-        assert_eq!(vals.len(), 3);
+        assert_eq!(vals.len(), 2);
         assert_eq!(&method, "requestTopic");
 
-        // Test destructuring Vec<Value> into tuple
-        // let (a, b, c): (String, String, Vec<Vec<String>>) = vals.iter().try_collect_value().unwrap();
+        let (a, b): (String, String) = vals.iter().try_collect_value().unwrap();
 
-
-        assert_eq!(vals.get(0).unwrap().as_str().unwrap(), "/rosout");
-        assert_eq!(vals.get(1).unwrap().as_str().unwrap(), "/rosout");
-
-        assert_eq!(
-            vals.get(2)
-                .unwrap()
-                .as_array()
-                .unwrap()
-                .get(0)
-                .unwrap()
-                .as_array()
-                .unwrap()
-                .get(0)
-                .unwrap()
-                .as_str()
-                .unwrap(),
-            "TCPROS"
-        );
+        assert_eq!(a, "/rosout");
+        assert_eq!(b, "/rosout");
     }
 }

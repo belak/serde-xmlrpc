@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, convert::{TryInto, TryFrom}};
+use std::{collections::BTreeMap, convert::TryFrom};
 
 use iso8601::DateTime;
 
@@ -139,12 +139,12 @@ impl From<i32> for Value {
     }
 }
 
-impl<'a> TryFrom<&'a Value> for &'a i32 {
+impl<'a> TryFrom<&'a Value> for i32 {
     type Error = ();
     fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
         match value {
-            Value::Int(i) => Ok(i),
-            _ => Err(())
+            Value::Int(i) => Ok(*i),
+            _ => Err(()),
         }
     }
 }
@@ -160,7 +160,7 @@ impl<'a> TryFrom<&'a Value> for &'a i64 {
     fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
         match value {
             Value::Int64(i) => Ok(i),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -176,7 +176,7 @@ impl<'a> TryFrom<&'a Value> for &'a bool {
     fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
         match value {
             Value::Bool(i) => Ok(i),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -187,13 +187,13 @@ impl From<String> for Value {
     }
 }
 
-impl<'a> TryFrom<&'a Value> for &'a str {
+impl<'a> TryFrom<&'a Value> for String {
     type Error = ();
 
     fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
         if let Some(val) = value.as_str() {
-            Ok(val)
-        }else{
+            Ok(val.to_string())
+        } else {
             Err(())
         }
     }
@@ -202,6 +202,18 @@ impl<'a> TryFrom<&'a Value> for &'a str {
 impl From<&str> for Value {
     fn from(other: &str) -> Self {
         Value::String(other.to_string())
+    }
+}
+
+impl<'a> TryFrom<&'a Value> for &'a str {
+    type Error = ();
+
+    fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
+        if let Some(val) = value.as_str() {
+            Ok(val)
+        } else {
+            Err(())
+        }
     }
 }
 
@@ -216,7 +228,7 @@ impl<'a> TryFrom<&'a Value> for &'a f64 {
     fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
         match value {
             Value::Double(i) => Ok(i),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -232,7 +244,7 @@ impl<'a> TryFrom<&'a Value> for &'a DateTime {
     fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
         match value {
             Value::DateTime(i) => Ok(i),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -248,7 +260,7 @@ impl<'a> TryFrom<&'a Value> for &'a Vec<Value> {
     fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
         match value {
             Value::Array(i) => Ok(i),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -264,7 +276,7 @@ impl<'a> TryFrom<&'a Value> for &'a BTreeMap<String, Value> {
     fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
         match value {
             Value::Struct(i) => Ok(i),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -280,76 +292,71 @@ impl<'a> TryFrom<&'a Value> for &'a Vec<u8> {
     fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
         match value {
             Value::Base64(i) => Ok(i),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
 
-
-/// Trait allowing for tuple destructuring iter of Value into a tuple
-trait TryCollectValue<'a,T> {
-    fn try_collect_value(&'a mut self) -> Option<T>;
-}
-
-// Due to lack of variadic traits in Rust we have do this kinda hacky
+// Due to lack of variadic traits in Rust we have do this kinda hacky support for tuple destructuring
 // See https://stackoverflow.com/questions/38863781/how-to-create-a-tuple-from-a-vector
 // and https://gist.github.com/PoignardAzur/aea33f28e2c58ffe1a93b8f8d3c58667
+
+/// Trait allowing for tuple destructuring iter of Value into a tuple
+pub trait TryCollectValue<'a, T> {
+    fn try_collect_value(&'a mut self) -> Option<T>;
+}
 
 // We define a macro that actually create the implementation of our TryCollect trait for
 // a tuple of a given size.
 macro_rules! impl_try_collect_value_tuple {
-    () => { };
-    ($A:ident $($I:ident)*) => {
-        impl_try_collect_value_tuple!($($I)*);
-
-        impl<$A: Iterator> TryCollectValue<($A::Item, $($I::Item),*)> for $A {
-            fn try_collect_value(&mut self) -> Option<($A::Item, $($I::Item),*)> {
-                let r = (try_opt!(self.next()),
-                         // hack: we need to use $I in the expasion
-                         $({ let a: $I::Item = try_opt!(self.next()); a}),* );
+    ($A:ident $($B:ident)*) => {
+        impl<'a, Iter: Iterator<Item = &'a Value>, $A: TryFrom<&'a Value> $(, $B: TryFrom<&'a Value>)*> TryCollectValue<'a, ($A $(, $B)*)> for Iter {
+            fn try_collect_value(&'a mut self) -> Option<($A $(, $B)*)> {
+                let r = ($A::try_from(self.next()?).ok()?
+                $(, $B::try_from(self.next()?).ok()?)*
+                );
                 Some(r)
             }
         }
     }
 }
-// Helper macro
-macro_rules! try_opt {
-    ($e:expr) => (match $e { Some(e) => e, None => return None })
-}
-
-// impl_try_collect_value_tuple!(A B);
-
-impl<'a, A: TryFrom<&'a Value>, B: TryFrom<&'a Value>, I: Iterator<Item = &'a Value>> TryCollectValue<'a, (A, B)> for I
-{
-    fn try_collect_value(&'a mut self) -> Option<(A, B)> {
-        let a = self.next()?.try_into().ok()?;
-        let b = self.next()?.try_into().ok()?;
-        Some((a,b))
-    }
-
-}
-
 
 // We then invoke the macro for each size of tuple we want to support,
 // convention in Rust is to support up to 12
-
-// impl_try_collect_value_tuple!(A);
-// impl_try_collect_value_tuple!(A A);
-// impl_try_collect_value_tuple!(A A A);
+// This generates a impl of TryCollectValue for Iterator<Value> to covert to each tuple size
+impl_try_collect_value_tuple!(A B);
+impl_try_collect_value_tuple!(A B C);
+impl_try_collect_value_tuple!(A B C D);
+impl_try_collect_value_tuple!(A B C D E);
+impl_try_collect_value_tuple!(A B C D E F);
+impl_try_collect_value_tuple!(A B C D E F G);
+impl_try_collect_value_tuple!(A B C D E F G H);
+impl_try_collect_value_tuple!(A B C D E F G H I);
+impl_try_collect_value_tuple!(A B C D E F G H I J);
+impl_try_collect_value_tuple!(A B C D E F G H I J K);
+impl_try_collect_value_tuple!(A B C D E F G H I J K L);
 
 #[cfg(test)]
 mod test {
-    use crate::Value;
     use super::TryCollectValue;
+    use crate::Value;
 
     #[test]
     fn test_tuple_destructure() {
-        let vec = vec![Value::Int(1), Value::String("2".into(), )];
+        let vec = vec![Value::Int(1), Value::String("2".into())];
 
-        let (a, b): (&i32, &str) = vec.iter().try_collect_value().unwrap();
-        assert_eq!(*a, 1);
+        let (a, b): (i32, String) = vec.iter().try_collect_value().unwrap();
+        assert_eq!(a, 1);
         assert_eq!(b, "2");
     }
+
+    // TODO would be a nice to have to figure this out
+    // Current impl doesn't handle nested vector types...
+    // would need to recursively call try_from...
+    // #[test]
+    // fn test_nested_array_destructure() {
+    //     let vec = vec![vec![vec![Value::String("2".into())]]];
+
+    //     let a : (Vec<Vec<String>>, ) = vec.iter().try_collect_value().unwrap();
+    // }
 }
-
-
