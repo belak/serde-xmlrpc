@@ -2,7 +2,7 @@
 name = "serde_xmlrpc"
 description = "A simple, no nonsense, XML-RPC serde implementation for Rust"
 license = "MIT OR Apache-2.0"
-version = "0.1.2"
+version = "0.2.0-alpha.1"
 authors = ["Kaleb Elwert <belak@coded.io>"]
 edition = "2018"
 documentation = "https://docs.rs/serde_xmlrpc"
@@ -13,7 +13,7 @@ readme = "README.md"
 anyhow = "1.0"
 base64 = "0.21"
 iso8601 = "0.6"
-quick-xml = "0.17"
+quick-xml = "0.28"
 thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde-transcode = "1.1"
