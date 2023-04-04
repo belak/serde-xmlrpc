@@ -243,7 +243,7 @@ pub fn from_values<T: serde::de::DeserializeOwned>(values: Vec<Value>) -> Result
 /// let (x, y): (i32, String) = from_value(val).unwrap();
 /// ```
 pub fn from_value<T: serde::de::DeserializeOwned>(value: Value) -> Result<T> {
-    let d = value::Deserializer::from_value(value.into());
+    let d = value::Deserializer::from_value(value);
     T::deserialize(d)
 }
 
