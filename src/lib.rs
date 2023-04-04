@@ -194,7 +194,7 @@ pub fn value_from_str(input: &str) -> Result<Value> {
     transcode(deserializer, serializer)
 }
 
-/// Attempts to convert any data type which can be reprsented as an xmlrpc value into a String.
+/// Attempts to convert any data type which can be represented as an xmlrpc value into a String.
 /// ```
 /// let a = serde_xmlrpc::value_to_string(42);
 /// let b = serde_xmlrpc::value_to_string("Text");
@@ -209,6 +209,42 @@ where
     let s = ValueSerializer::new(&mut writer);
     transcode(d, s)?;
     Ok(String::from_utf8(writer.into_inner()).map_err(error::EncodingError::from)?)
+}
+
+/// Attempts to convert a Vec of values to any data type which can be deserialized.
+/// This is typically used with [request_from_str] to implement server behavior:
+/// ```
+/// let val = r#"<?xml version=\"1.0\"?>
+///   <methodCall>
+///     <methodName>requestTopic</methodName>
+///     <params>
+///       <param><value>/rosout</value></param>
+///       <param><value><int>42</int></value></param>
+///     </params>
+///   </methodCall>"#;
+/// // Parse the request
+/// let (method, vals) = serde_xmlrpc::request_from_str(val).unwrap();
+/// // Now that we know what method is being called we can typecast our args
+/// let (a, b): (String, i32) = serde_xmlrpc::from_values(vals).unwrap();
+/// ```
+pub fn from_values<T: serde::de::DeserializeOwned>(values: Vec<Value>) -> Result<T> {
+    // Wrap input vec into our value type so it is compatible with our deserializer
+    // Kinda a cheap hack, but I like returning Vec<Value> for the args to a function
+    // instead of a Value which is itself an array...
+    let val = Value::Array(values);
+    from_value(val)
+}
+
+/// Attempts to deserialize the Value into the given type, equivalent API of
+/// [serde_json::from_value](https://docs.rs/serde_json/latest/serde_json/fn.from_value.html).
+/// ```
+/// use serde_xmlrpc::{from_value, Value};
+/// let val = Value::Array(vec![Value::Int(3), Value::String("Test".to_string())]);
+/// let (x, y): (i32, String) = from_value(val).unwrap();
+/// ```
+pub fn from_value<T: serde::de::DeserializeOwned>(value: Value) -> Result<T> {
+    let d = value::Deserializer::from_value(value);
+    T::deserialize(d)
 }
 
 #[cfg(test)]
@@ -428,53 +464,40 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_request() {
-        // Example data taken from a ROS node connection negotation, and hand simplified for minimum case
-        let val = r#"<?xml version=\"1.0\"?>
-          <methodCall>
-            <methodName>requestTopic</methodName>
-            <params>
-              <param><value>/rosout</value></param>
-            </params>
-          </methodCall>"#;
-
-        let (method_name, arg) = request_from_str(&val).unwrap();
-        assert_eq!(arg.get(0).unwrap().as_str().unwrap(), "/rosout");
-        assert_eq!(&method_name, "requestTopic");
-    }
-
-    #[test]
     fn test_parse_request_multiple_params() {
-        // Example data taken from a ROS node connection negotation
         let val = r#"<?xml version=\"1.0\"?>
           <methodCall>
             <methodName>requestTopic</methodName>
             <params>
               <param><value>/rosout</value></param>
-              <param><value>/rosout</value></param>
+              <param><value><int>42</int></value></param>
               <param><value><array><data><value><array><data><value>TCPROS</value></data></array></value></data></array></value></param>
             </params>
           </methodCall>"#;
 
         let (method, vals) = request_from_str(val).unwrap();
-        assert_eq!(vals.len(), 3);
         assert_eq!(&method, "requestTopic");
-        assert_eq!(vals.get(0).unwrap().as_str().unwrap(), "/rosout");
-        assert_eq!(vals.get(1).unwrap().as_str().unwrap(), "/rosout");
-        assert_eq!(
-            vals.get(2)
-                .unwrap()
-                .as_array()
-                .unwrap()
-                .get(0)
-                .unwrap()
-                .as_array()
-                .unwrap()
-                .get(0)
-                .unwrap()
-                .as_str()
-                .unwrap(),
-            "TCPROS"
-        );
+
+        // This is a little redundant with test_from_values, but is easiest way
+        // to confirm parsing was perfect
+        let (a, b, c): (String, i32, Vec<Vec<String>>) = from_values(vals).unwrap();
+
+        assert_eq!(a, "/rosout");
+        assert_eq!(b, 42);
+        assert_eq!(c, vec![vec!["TCPROS".to_string()]]);
+    }
+
+    #[test]
+    fn test_from_values() {
+        let vals = vec![
+            Value::Int(32),
+            Value::Double(1.0),
+            Value::String("hello".to_string()),
+        ];
+
+        let (a, b, c): (i32, f64, String) = from_values(vals).unwrap();
+        assert_eq!(a, 32);
+        assert_eq!(b, 1.0);
+        assert_eq!(c, "hello");
     }
 }

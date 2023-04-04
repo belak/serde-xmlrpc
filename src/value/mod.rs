@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, convert::TryFrom};
 
 use iso8601::DateTime;
 
@@ -155,11 +155,21 @@ impl Value {
     }
 }
 
-// Conversions into Value
+// Conversions into and from Value
 
 impl From<i32> for Value {
     fn from(other: i32) -> Self {
         Value::Int(other)
+    }
+}
+
+impl<'a> TryFrom<&'a Value> for i32 {
+    type Error = ();
+    fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Int(i) => Ok(*i),
+            _ => Err(()),
+        }
     }
 }
 
@@ -169,9 +179,29 @@ impl From<i64> for Value {
     }
 }
 
+impl<'a> TryFrom<&'a Value> for &'a i64 {
+    type Error = ();
+    fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Int64(i) => Ok(i),
+            _ => Err(()),
+        }
+    }
+}
+
 impl From<bool> for Value {
     fn from(other: bool) -> Self {
         Value::Bool(other)
+    }
+}
+
+impl<'a> TryFrom<&'a Value> for &'a bool {
+    type Error = ();
+    fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Bool(i) => Ok(i),
+            _ => Err(()),
+        }
     }
 }
 
@@ -181,9 +211,33 @@ impl From<String> for Value {
     }
 }
 
+impl<'a> TryFrom<&'a Value> for String {
+    type Error = ();
+
+    fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
+        if let Some(val) = value.as_str() {
+            Ok(val.to_string())
+        } else {
+            Err(())
+        }
+    }
+}
+
 impl From<&str> for Value {
     fn from(other: &str) -> Self {
         Value::String(other.to_string())
+    }
+}
+
+impl<'a> TryFrom<&'a Value> for &'a str {
+    type Error = ();
+
+    fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
+        if let Some(val) = value.as_str() {
+            Ok(val)
+        } else {
+            Err(())
+        }
     }
 }
 
@@ -193,9 +247,29 @@ impl From<f64> for Value {
     }
 }
 
+impl<'a> TryFrom<&'a Value> for &'a f64 {
+    type Error = ();
+    fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Double(i) => Ok(i),
+            _ => Err(()),
+        }
+    }
+}
+
 impl From<DateTime> for Value {
     fn from(other: DateTime) -> Self {
         Value::DateTime(other)
+    }
+}
+
+impl<'a> TryFrom<&'a Value> for &'a DateTime {
+    type Error = ();
+    fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::DateTime(i) => Ok(i),
+            _ => Err(()),
+        }
     }
 }
 
@@ -205,14 +279,44 @@ impl From<Vec<Value>> for Value {
     }
 }
 
+impl<'a> TryFrom<&'a Value> for &'a Vec<Value> {
+    type Error = ();
+    fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Array(i) => Ok(i),
+            _ => Err(()),
+        }
+    }
+}
+
 impl From<BTreeMap<String, Value>> for Value {
     fn from(other: BTreeMap<String, Value>) -> Value {
         Value::Struct(other)
     }
 }
 
+impl<'a> TryFrom<&'a Value> for &'a BTreeMap<String, Value> {
+    type Error = ();
+    fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Struct(i) => Ok(i),
+            _ => Err(()),
+        }
+    }
+}
+
 impl From<Vec<u8>> for Value {
     fn from(other: Vec<u8>) -> Self {
         Value::Base64(other)
+    }
+}
+
+impl<'a> TryFrom<&'a Value> for &'a Vec<u8> {
+    type Error = ();
+    fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Base64(i) => Ok(i),
+            _ => Err(()),
+        }
     }
 }
