@@ -80,6 +80,35 @@ where
     }
 }
 
+/// Attempt to serialize a xmlrpc response from a list of values.
+/// Each item in the list will be represented as a seperate "param" in xmlrpc parlance.
+/// ```
+/// use serde_xmlrpc::{response_to_string,Value};
+/// let body = response_to_string(vec![Value::Int(42), Value::String("data".to_string())]).unwrap();
+/// assert_eq!(body,
+/// r#"<?xml version="1.0" encoding="utf-8"?><methodResponse><params><param><value><int>42</int></value></param><param><value><string>data</string></value></param></params></methodResponse>"#
+/// );
+/// ```
+pub fn response_to_string(params: Vec<Value>) -> Result<String> {
+    let mut writer = Writer::new(Vec::new());
+    writer.write_decl()?;
+
+    writer.write_start_tag("methodResponse")?;
+    writer.write_start_tag("params")?;
+    for value in params {
+        writer.write_start_tag("param")?;
+
+        let deserializer = value::Deserializer::from_value(value);
+        let serializer = ValueSerializer::new(&mut writer);
+        transcode(deserializer, serializer)?;
+
+        writer.write_end_tag("param")?;
+    }
+    writer.write_end_tag("params")?;
+    writer.write_end_tag("methodResponse")?;
+    Ok(String::from_utf8(writer.into_inner()).map_err(error::EncodingError::from)?)
+}
+
 /// Expects an input string which is a valid xmlrpc request body, and parses out the method name and parameters from it.
 /// This function would typically be used by a server to parse incoming requests.
 ///   * Returns a tuple of (method name, Arguments) if successful
