@@ -81,7 +81,7 @@ where
 }
 
 /// Attempt to serialize a xmlrpc response from a list of values.
-/// Each item in the list will be represented as a seperate "param" in xmlrpc parlance.
+/// Each item in the list will be represented as a separate "param" in xmlrpc parlance.
 /// ```
 /// use serde_xmlrpc::{response_to_string,Value};
 /// let body = response_to_string(vec![Value::Int(42), Value::String("data".to_string())]).unwrap();
