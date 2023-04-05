@@ -84,12 +84,12 @@ where
 /// Each item in the list will be represented as a separate "param" in xmlrpc parlance.
 /// ```
 /// use serde_xmlrpc::{response_to_string,Value};
-/// let body = response_to_string(vec![Value::Int(42), Value::String("data".to_string())]).unwrap();
+/// let body = response_to_string(vec![Value::Int(42), Value::String("data".to_string())].into_iter()).unwrap();
 /// assert_eq!(body,
 /// r#"<?xml version="1.0" encoding="utf-8"?><methodResponse><params><param><value><int>42</int></value></param><param><value><string>data</string></value></param></params></methodResponse>"#
 /// );
 /// ```
-pub fn response_to_string(params: Vec<Value>) -> Result<String> {
+pub fn response_to_string(params: impl Iterator<Item = Value>) -> Result<String> {
     let mut writer = Writer::new(Vec::new());
     writer.write_decl()?;
 
