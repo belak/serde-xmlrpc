@@ -2,7 +2,7 @@ use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::name::QName;
 use quick_xml::{Reader, Writer};
 
-use crate::error::{EncodingError, ParseError, Result};
+use crate::error::{DecodingError, EncodingError, Result};
 
 mod map;
 mod seq;
@@ -24,7 +24,7 @@ impl<'a> ReaderExt for Reader<&'a [u8]> {
                 Ok(Event::Decl(ref _d)) => continue,
                 Ok(Event::Start(ref e)) => {
                     if e.name() != end {
-                        return Err(ParseError::UnexpectedTag(
+                        return Err(DecodingError::UnexpectedTag(
                             String::from_utf8_lossy(e.name().into_inner()).into(),
                             String::from_utf8_lossy(end.into_inner()).into(),
                         )
@@ -34,14 +34,14 @@ impl<'a> ReaderExt for Reader<&'a [u8]> {
                     break;
                 }
                 Ok(_e) => {
-                    return Err(ParseError::UnexpectedEvent(
+                    return Err(DecodingError::UnexpectedEvent(
                         //e,
                         String::from_utf8_lossy(end.into_inner()).into(),
                     )
                     .into());
                 }
                 Err(e) => {
-                    return Err(ParseError::UnexpectedError(
+                    return Err(DecodingError::UnexpectedError(
                         e.into(),
                         String::from_utf8_lossy(end.into_inner()).into(),
                     )

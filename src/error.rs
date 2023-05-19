@@ -13,10 +13,10 @@ use thiserror::Error as ThisError;
 /// operation.
 #[derive(ThisError, Debug)]
 pub enum Error {
-    /// The response could not be parsed. This can happen when the server doesn't correctly
-    /// implement the XML-RPC spec.
-    #[error("parse error: {0}")]
-    ParseError(#[from] ParseError),
+    /// The response could not be decoded. This can happen when the server doesn't correctly
+    /// implement the XML-RPC spec or malformed XML is sent.
+    #[error("decoding error: {0}")]
+    DecodingError(#[from] DecodingError),
 
     /// The response could not be encoded.
     #[error("encoding error: {0}")]
@@ -26,12 +26,6 @@ pub enum Error {
     /// encountered a problem (for example, an invalid (number of) arguments was passed).
     #[error("server fault: {0}")]
     Fault(#[from] Fault),
-
-    #[error("serde decoding error: {0}")]
-    DecodeError(String),
-
-    #[error("serde encoding error: {0}")]
-    EncodeError(String),
 }
 
 impl serde::de::Error for Error {
@@ -39,7 +33,7 @@ impl serde::de::Error for Error {
     where
         T: std::fmt::Display,
     {
-        Error::DecodeError(msg.to_string())
+        DecodingError::SerdeError(msg.to_string()).into()
     }
 }
 
@@ -48,13 +42,13 @@ impl serde::ser::Error for Error {
     where
         T: std::fmt::Display,
     {
-        Error::EncodeError(msg.to_string())
+        EncodingError::SerdeError(msg.to_string()).into()
     }
 }
 
 /// Error while parsing XML.
 #[derive(ThisError, Debug)]
-pub enum ParseError {
+pub enum DecodingError {
     #[error("malformed XML: {0}")]
     XmlError(#[from] XmlError),
 
@@ -66,9 +60,6 @@ pub enum ParseError {
 
     #[error("malformed XML: {0}")]
     Base64DecodeError(#[from] DecodeError),
-
-    #[error("malformed XML: {0}")]
-    DateTimeDecodeError(String),
 
     #[error("malformed XML: invalid boolean value: {0}")]
     BooleanDecodeError(String),
@@ -88,14 +79,20 @@ pub enum ParseError {
     #[error("unexpected EOF: expected tag {0}")]
     UnexpectedEOF(String),
 
-    #[error("tag not found: {0}")]
-    TagNotFound(String),
-
     #[error("key must be convertable to a string")]
     KeyMustBeString,
 
-    #[error("fault: {0}")]
-    ParseFaultError(String),
+    #[error("serde: {0}")]
+    SerdeError(String),
+}
+
+impl serde::de::Error for DecodingError {
+    fn custom<T>(msg: T) -> Self
+    where
+        T: std::fmt::Display,
+    {
+        DecodingError::SerdeError(msg.to_string())
+    }
 }
 
 /// Error while encoding XML.
@@ -110,6 +107,21 @@ pub enum EncodingError {
 
     #[error("XML error: {0}")]
     XmlError(#[from] XmlError),
+
+    #[error("invalid key type: key must be an {0}")]
+    InvalidKeyType(String),
+
+    #[error("serde: {0}")]
+    SerdeError(String),
+}
+
+impl serde::ser::Error for EncodingError {
+    fn custom<T>(msg: T) -> Self
+    where
+        T: std::fmt::Display,
+    {
+        EncodingError::SerdeError(msg.to_string())
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

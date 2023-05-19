@@ -37,16 +37,16 @@ where
     // Check the first event. This will determine if we're loading a Fault or a
     // Value.
     loop {
-        match reader.read_event().map_err(error::ParseError::from)? {
+        match reader.read_event().map_err(error::DecodingError::from)? {
             Event::Decl(_) => continue,
             Event::Start(e) if e.name() == QName(b"methodResponse") => {
                 break;
             }
-            e => return Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
+            e => return Err(error::DecodingError::UnexpectedEvent(format!("{:?}", e)).into()),
         };
     }
 
-    match reader.read_event().map_err(error::ParseError::from)? {
+    match reader.read_event().map_err(error::DecodingError::from)? {
         Event::Start(e) if e.name() == QName(b"params") => {
             reader.expect_tag(QName(b"param"))?;
             reader.expect_tag(QName(b"value"))?;
@@ -54,10 +54,10 @@ where
             let ret = T::deserialize(deserializer)?;
             reader
                 .read_to_end(QName(b"param"))
-                .map_err(error::ParseError::from)?;
+                .map_err(error::DecodingError::from)?;
             reader
                 .read_to_end(e.name())
-                .map_err(error::ParseError::from)?;
+                .map_err(error::DecodingError::from)?;
             Ok(ret)
         }
         Event::Start(e) if e.name() == QName(b"fault") => {
@@ -72,11 +72,11 @@ where
 
             reader
                 .read_to_end(e.name())
-                .map_err(error::ParseError::from)?;
+                .map_err(error::DecodingError::from)?;
 
             Err(fault.into())
         }
-        e => Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
+        e => Err(error::DecodingError::UnexpectedEvent(format!("{:?}", e)).into()),
     }
 }
 
@@ -121,12 +121,12 @@ pub fn request_from_str(request: &str) -> Result<(String, Vec<Value>)> {
 
     // Search for methodCall start
     loop {
-        match reader.read_event().map_err(error::ParseError::from)? {
+        match reader.read_event().map_err(error::DecodingError::from)? {
             Event::Decl(_) => continue,
             Event::Start(e) if e.name() == QName(b"methodCall") => {
                 break;
             }
-            e => return Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
+            e => return Err(error::DecodingError::UnexpectedEvent(format!("{:?}", e)).into()),
         };
     }
 
@@ -134,19 +134,19 @@ pub fn request_from_str(request: &str) -> Result<(String, Vec<Value>)> {
     // in the xmlrpc request, I'm not certain that this is actually enforced by the
     // specification, but could find not counter example where it wasn't true... -Carter
 
-    let method_name = match reader.read_event().map_err(error::ParseError::from)? {
+    let method_name = match reader.read_event().map_err(error::DecodingError::from)? {
         Event::Start(e) if e.name() == QName(b"methodName") => reader
             .read_text(e.name())
-            .map_err(error::ParseError::from)?,
-        e => return Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
+            .map_err(error::DecodingError::from)?,
+        e => return Err(error::DecodingError::UnexpectedEvent(format!("{:?}", e)).into()),
     };
 
-    match reader.read_event().map_err(error::ParseError::from)? {
+    match reader.read_event().map_err(error::DecodingError::from)? {
         Event::Start(e) if e.name() == QName(b"params") => {
             let mut params = Vec::new();
 
             let params = loop {
-                break match reader.read_event().map_err(error::ParseError::from)? {
+                break match reader.read_event().map_err(error::DecodingError::from)? {
                     // Read each parameter into a Value
                     Event::Start(e) if e.name() == QName(b"param") => {
                         reader.expect_tag(QName(b"value"))?;
@@ -157,14 +157,16 @@ pub fn request_from_str(request: &str) -> Result<(String, Vec<Value>)> {
 
                         reader
                             .read_to_end(e.name())
-                            .map_err(error::ParseError::from)?;
+                            .map_err(error::DecodingError::from)?;
 
                         continue;
                     }
 
                     // Once we see the relevant params end tag, we know we have all the params.
                     Event::End(e) if e.name() == QName(b"params") => params,
-                    e => return Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
+                    e => {
+                        return Err(error::DecodingError::UnexpectedEvent(format!("{:?}", e)).into())
+                    }
                 };
             };
 
@@ -173,7 +175,7 @@ pub fn request_from_str(request: &str) -> Result<(String, Vec<Value>)> {
 
             Ok((method_name.into_owned(), params))
         }
-        e => Err(error::ParseError::UnexpectedEvent(format!("{:?}", e)).into()),
+        e => Err(error::DecodingError::UnexpectedEvent(format!("{:?}", e)).into()),
     }
 }
 

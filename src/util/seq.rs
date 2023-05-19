@@ -1,7 +1,7 @@
 use quick_xml::Reader;
 use quick_xml::{events::Event, name::QName, Writer};
 
-use crate::error::ParseError;
+use crate::error::DecodingError;
 use crate::util::{ReaderExt, WriterExt};
 use crate::{Error, Result};
 
@@ -142,15 +142,15 @@ impl<'de, 'a, 'r> serde::de::SeqAccess<'de> for SeqDeserializer<'a, 'r> {
         match self.reader.read_event() {
             Ok(Event::End(ref e)) if e.name() == self.end => {
                 if let Some(end) = self.end_maybe {
-                    self.reader.read_to_end(end).map_err(ParseError::from)?;
+                    self.reader.read_to_end(end).map_err(DecodingError::from)?;
                 }
                 Ok(None)
             }
             Ok(Event::Start(ref e)) if e.name() == QName(b"value") => Ok(Some(
                 seed.deserialize(ValueDeserializer::new(self.reader)?)?,
             )),
-            Ok(_) => Err(ParseError::UnexpectedEvent("one of value".to_string()).into()),
-            Err(e) => Err(ParseError::from(e).into()),
+            Ok(_) => Err(DecodingError::UnexpectedEvent("one of value".to_string()).into()),
+            Err(e) => Err(DecodingError::from(e).into()),
         }
     }
 }
