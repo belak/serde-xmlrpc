@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
+use crate::error::EncodingError;
 use crate::{Error, Result, Value};
 
 pub struct Serializer;
@@ -286,9 +287,10 @@ impl serde::ser::SerializeMap for SerializeMap {
                 self.next_key = Some(v.to_string());
                 Ok(())
             }
-            _ => Err(Error::EncodeError(
-                "Key must be an int, int64, bool, string, char, or float.".to_string(),
-            )),
+            _ => Err(EncodingError::InvalidKeyType(
+                "int, int64, bool, string, char, or float".to_string(),
+            )
+            .into()),
         }
     }
 

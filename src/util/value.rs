@@ -7,7 +7,7 @@ use quick_xml::{
 use serde::forward_to_deserialize_any;
 use std::convert::TryInto;
 
-use crate::error::{EncodingError, ParseError};
+use crate::error::{DecodingError, EncodingError};
 use crate::util::{ReaderExt, WriterExt};
 use crate::{Error, Result};
 
@@ -40,7 +40,7 @@ impl<'de, 'a, 'r> serde::Deserializer<'de> for Deserializer<'a, 'r> {
             // "string" tag.
             Ok(Event::Text(e)) => visitor.visit_str::<Self::Error>(
                 e.unescape()
-                    .map_err(ParseError::from)?.as_ref(),
+                    .map_err(DecodingError::from)?.as_ref(),
             )?,
 
             // Alternatively, if we got the matching end tag, this is an empty
@@ -53,9 +53,9 @@ impl<'de, 'a, 'r> serde::Deserializer<'de> for Deserializer<'a, 'r> {
                     let text = self
                         .reader
                         .read_text(e.name())
-                        .map_err(ParseError::from)?;
+                        .map_err(DecodingError::from)?;
 
-                    let val: i64 = text.parse().map_err(ParseError::from)?;
+                    let val: i64 = text.parse().map_err(DecodingError::from)?;
 
                     if let Ok(val) = val.try_into() {
                         visitor.visit_i8::<Self::Error>(val)?
@@ -72,11 +72,11 @@ impl<'de, 'a, 'r> serde::Deserializer<'de> for Deserializer<'a, 'r> {
                     let text = self
                         .reader
                         .read_text(e.name())
-                        .map_err(ParseError::from)?;
+                        .map_err(DecodingError::from)?;
                     match text.as_ref() {
                         "1" => visitor.visit_bool::<Self::Error>(true),
                         "0" => visitor.visit_bool::<Self::Error>(false),
-                        _ => return Err(ParseError::BooleanDecodeError(text.into_owned()).into()),
+                        _ => return Err(DecodingError::BooleanDecodeError(text.into_owned()).into()),
                     }?
                 }
 
@@ -84,7 +84,7 @@ impl<'de, 'a, 'r> serde::Deserializer<'de> for Deserializer<'a, 'r> {
                     visitor.visit_str::<Self::Error>(
                         self.reader
                             .read_text(e.name())
-                            .map_err(ParseError::from)?.as_ref(),
+                            .map_err(DecodingError::from)?.as_ref(),
                     )?
                 }
 
@@ -92,15 +92,15 @@ impl<'de, 'a, 'r> serde::Deserializer<'de> for Deserializer<'a, 'r> {
                     let text = self
                         .reader
                         .read_text(e.name())
-                        .map_err(ParseError::from)?;
-                    visitor.visit_f64::<Self::Error>(text.parse().map_err(ParseError::from)?)?
+                        .map_err(DecodingError::from)?;
+                    visitor.visit_f64::<Self::Error>(text.parse().map_err(DecodingError::from)?)?
                 }
 
                 QName(b"dateTime.iso8601") => {
                     visitor.visit_str::<Self::Error>(
                         self.reader
                             .read_text(e.name())
-                            .map_err(ParseError::from)?.as_ref(),
+                            .map_err(DecodingError::from)?.as_ref(),
                     )?
                 }
 
@@ -108,9 +108,9 @@ impl<'de, 'a, 'r> serde::Deserializer<'de> for Deserializer<'a, 'r> {
                     let text = self
                         .reader
                         .read_text(e.name())
-                        .map_err(ParseError::from)?;
+                        .map_err(DecodingError::from)?;
                     visitor.visit_byte_buf::<Self::Error>(
-                       BASE64_STANDARD.decode(text.as_ref()).map_err(ParseError::from)?,
+                       BASE64_STANDARD.decode(text.as_ref()).map_err(DecodingError::from)?,
                     )?
                 }
 
@@ -123,12 +123,12 @@ impl<'de, 'a, 'r> serde::Deserializer<'de> for Deserializer<'a, 'r> {
                 QName(b"nil") => {
                     self.reader
                         .read_to_end(e.name())
-                        .map_err(ParseError::from)?;
+                        .map_err(DecodingError::from)?;
                     visitor.visit_unit::<Self::Error>()?
                 }
 
                 _ => {
-                    return Err(ParseError::UnexpectedTag(
+                    return Err(DecodingError::UnexpectedTag(
                         String::from_utf8_lossy(e.name().into_inner()).into(),
                         "one of int|i4|i8|boolean|string|double|dateTime.iso8601|base64|struct|array|nil"
                             .into(),
@@ -139,7 +139,7 @@ impl<'de, 'a, 'r> serde::Deserializer<'de> for Deserializer<'a, 'r> {
 
             // Possible error states
             Ok(Event::Eof) => {
-                return Err(ParseError::UnexpectedEOF(
+                return Err(DecodingError::UnexpectedEOF(
                     "one of int|i4|i8|boolean|string|double|dateTime.iso8601|base64|struct|array|nil"
                         .into(),
                 )
@@ -147,19 +147,19 @@ impl<'de, 'a, 'r> serde::Deserializer<'de> for Deserializer<'a, 'r> {
             }
 
             Ok(_) => {
-                return Err(ParseError::UnexpectedEvent(
+                return Err(DecodingError::UnexpectedEvent(
                     "one of int|i4|i8|boolean|string|double|dateTime.iso8601|base64|struct|array|nil"
                         .into(),
                 )
                 .into())
             }
 
-            Err(e) => return Err(ParseError::from(e).into()),
+            Err(e) => return Err(DecodingError::from(e).into()),
         };
 
         self.reader
             .read_to_end(QName(b"value"))
-            .map_err(ParseError::from)?;
+            .map_err(DecodingError::from)?;
 
         Ok(ret)
     }
@@ -404,7 +404,7 @@ where
     let mut writer = Writer::new(Vec::new());
     let ser = Serializer::new(&mut writer);
     val.serialize(ser)?;
-    Ok(String::from_utf8(writer.into_inner()).map_err(ParseError::from)?)
+    Ok(String::from_utf8(writer.into_inner()).map_err(DecodingError::from)?)
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@ use base64::prelude::*;
 use quick_xml::{events::Event, name::QName, Reader, Writer};
 use serde::forward_to_deserialize_any;
 
-use crate::error::ParseError;
+use crate::error::DecodingError;
 use crate::util::{ReaderExt, WriterExt};
 use crate::{Error, Result};
 
@@ -287,7 +287,7 @@ where
 }
 
 fn key_must_be_a_string() -> Error {
-    Error::from(ParseError::KeyMustBeString)
+    Error::from(DecodingError::KeyMustBeString)
 }
 
 #[doc(hidden)]
@@ -325,8 +325,8 @@ impl<'de, 'a, 'r> serde::de::MapAccess<'de> for MapDeserializer<'a, 'r> {
             }
 
             // Any other event or error is unexpected and is an actual error.
-            Ok(e) => Err(ParseError::UnexpectedEvent(format!("map key read: {:?}", e)).into()),
-            Err(e) => Err(ParseError::from(e).into()),
+            Ok(e) => Err(DecodingError::UnexpectedEvent(format!("map key read: {:?}", e)).into()),
+            Err(e) => Err(DecodingError::from(e).into()),
         }
     }
 
@@ -338,13 +338,13 @@ impl<'de, 'a, 'r> serde::de::MapAccess<'de> for MapDeserializer<'a, 'r> {
             Ok(Event::Start(ref e)) if e.name() == QName(b"value") => {
                 Ok(seed.deserialize(ValueDeserializer::new(self.reader)?)?)
             }
-            Ok(e) => Err(ParseError::UnexpectedEvent(format!("map value read: {:?}", e)).into()),
-            Err(e) => Err(ParseError::from(e).into()),
+            Ok(e) => Err(DecodingError::UnexpectedEvent(format!("map value read: {:?}", e)).into()),
+            Err(e) => Err(DecodingError::from(e).into()),
         };
 
         self.reader
             .read_to_end(QName(b"member"))
-            .map_err(ParseError::from)?;
+            .map_err(DecodingError::from)?;
 
         ret
     }
@@ -372,7 +372,7 @@ impl<'de, 'a, 'r> serde::Deserializer<'de> for MapKeyDeserializer<'a, 'r> {
         visitor.visit_string(
             self.reader
                 .read_text(QName(self.end))
-                .map_err(ParseError::from)?
+                .map_err(DecodingError::from)?
                 .into(),
         )
     }
