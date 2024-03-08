@@ -135,13 +135,13 @@ impl<'de> serde::de::MapAccess<'de> for MapDeserializer {
     }
 }
 
-impl<'de, 'a, 'r> serde::Deserialize<'de> for Value {
+impl<'de> serde::Deserialize<'de> for Value {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Value, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         serde_transcode::transcode(deserializer, super::Serializer::new())
-            .map_err(|e| serde::de::Error::custom(e))
+            .map_err(serde::de::Error::custom)
     }
 }
 
