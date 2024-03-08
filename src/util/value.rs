@@ -180,11 +180,11 @@ impl<'de, 'a, 'r> serde::Deserializer<'de> for Deserializer<'a, 'r> {
             if e.name() == QName(b"nil") {
                 reader.read_to_end(e.name()).map_err(DecodingError::from)?;
                 *self.reader = reader;
-                return Ok(visitor.visit_none::<Self::Error>()?);
+                return visitor.visit_none::<Self::Error>();
             }
         }
 
-        Ok(visitor.visit_some(self)?)
+        visitor.visit_some(self)
     }
 
     forward_to_deserialize_any!(
