@@ -9,7 +9,7 @@ pub use de::Deserializer;
 pub use ser::Serializer;
 
 /// Convert a `T` into `serde_xmlrpc::Value` which is an enum that can represent
-/// any valid JSON data.
+/// any valid XML-RPC data.
 ///
 /// # Example
 ///

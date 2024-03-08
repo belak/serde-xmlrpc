@@ -519,6 +519,23 @@ mod tests {
     }
 
     #[test]
+    fn test_response_to_value() {
+        // Ensure Value implementes serde::Deserialize. This allows reading
+        // responses into a Value rather than a specific type.
+        let val: Value = response_from_str(
+            r#"<?xml version="1.0" encoding="utf-8"?>
+            <methodResponse>
+              <params>
+                <param><value><string>hello world</string></value></param>
+              </params>
+            </methodResponse>"#,
+        )
+        .unwrap();
+
+        assert_eq!(val, Value::String("hello world".to_string()));
+    }
+
+    #[test]
     fn test_from_values() {
         let vals = vec![
             Value::Int(32),
