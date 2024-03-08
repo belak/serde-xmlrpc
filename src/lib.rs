@@ -9,6 +9,10 @@ use utils::{ReaderExt, WriterExt};
 pub use crate::error::{Error, Result};
 pub use crate::value::Value;
 
+#[deprecated(
+    since = "0.1.1",
+    note = "please use `serde_xmlrpc::response_from_str` instead"
+)]
 pub fn parse_response(data: &str) -> Result<Value> {
     let mut reader = Reader::from_str(data);
     reader.expand_empty_elements(true);
@@ -23,6 +27,10 @@ pub fn parse_response(data: &str) -> Result<Value> {
     Value::read_response_from_reader(&mut reader, &mut buf)
 }
 
+#[deprecated(
+    since = "0.1.1",
+    note = "please use `serde_xmlrpc::value_from_str` instead"
+)]
 pub fn parse_value(data: &str) -> Result<Value> {
     let mut reader = Reader::from_str(data);
     reader.expand_empty_elements(true);
@@ -37,6 +45,10 @@ pub fn parse_value(data: &str) -> Result<Value> {
     Value::read_value_from_reader(&mut reader, &mut buf)
 }
 
+#[deprecated(
+    since = "0.1.1",
+    note = "please use `serde_xmlrpc::request_to_string` instead"
+)]
 pub fn stringify_request(name: &str, args: &[Value]) -> Result<String> {
     let mut buf = Vec::new();
     let mut writer = Writer::new(&mut buf);

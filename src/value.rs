@@ -9,6 +9,7 @@ use quick_xml::{Reader, Writer};
 use crate::error::{EncodingError, Error, Fault, ParseError, Result};
 use crate::utils::{ReaderExt, WriterExt};
 
+#[deprecated(since = "0.1.1", note = "please use `serde_xmlrpc::Value` instead")]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     /// A 32-bit signed integer (`<i4>` or `<int>`).

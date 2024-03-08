@@ -2,7 +2,7 @@
 name = "simple-xmlrpc"
 description = "A simple, no nonsense, XML-RPC implementation for Rust"
 license = "MIT"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Kaleb Elwert <belak@coded.io>"]
 edition = "2018"
 documentation = "https://docs.rs/simple-xmlrpc"

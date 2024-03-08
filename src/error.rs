@@ -15,6 +15,7 @@ use crate::Value;
 /// This can be a lower-level error (for example, the HTTP request failed), a problem with the
 /// server (maybe it's not implementing XML-RPC correctly), or just a failure to execute the
 /// operation.
+#[deprecated(since = "0.1.1", note = "please use `serde_xmlrpc::Error` instead")]
 #[derive(ThisError, Debug)]
 pub enum Error {
     /// The response could not be parsed. This can happen when the server doesn't correctly
@@ -85,6 +86,7 @@ pub enum EncodingError {
     XmlError(#[from] XmlError),
 }
 
+#[deprecated(since = "0.1.1", note = "please use `serde_xmlrpc::Result` instead")]
 pub type Result<T> = result::Result<T, Error>;
 
 /// A `<fault>` response, indicating that a request failed.
