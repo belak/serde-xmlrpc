@@ -164,10 +164,33 @@ impl<'de, 'a, 'r> serde::Deserializer<'de> for Deserializer<'a, 'r> {
         Ok(ret)
     }
 
+    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        // Clone the reader and walk through it - if we get starting nil tag, we
+        // read to the end of the nil tag, replace the inner reader, and call
+        // visit_none. Otherwise, we defer to visitor.visit_some(self).
+        //
+        // We clone the reader (rather than using self.reader directly) as a way
+        // to "peek" at the next event.
+        let mut reader = self.reader.clone();
+
+        if let Ok(Event::Start(ref e)) = reader.read_event() {
+            if e.name() == QName(b"nil") {
+                reader.read_to_end(e.name()).map_err(DecodingError::from)?;
+                *self.reader = reader;
+                return Ok(visitor.visit_none::<Self::Error>()?);
+            }
+        }
+
+        Ok(visitor.visit_some(self)?)
+    }
+
     forward_to_deserialize_any!(
         bool i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 char str string bytes
         byte_buf unit unit_struct newtype_struct seq tuple
-        tuple_struct map struct enum identifier ignored_any option
+        tuple_struct map struct enum identifier ignored_any
     );
 }
 
@@ -436,6 +459,12 @@ mod tests {
                 hello: "world".to_string()
             }
         );
+
+        let x: Option<String> = from_str("<value><nil/></value>").unwrap();
+        assert_eq!(x, None);
+
+        let x: Option<String> = from_str("<value>hello world</value>").unwrap();
+        assert_eq!(x, Some("hello world".to_string()));
     }
 
     #[test]
@@ -457,6 +486,16 @@ mod tests {
                 hello: "world".to_string()
             }).unwrap(),
             "<value><struct><member><name>hello</name><value><string>world</string></value></member></struct></value>",
-        )
+        );
+
+        assert_eq!(
+            &to_string(&Some("hello world".to_string())).unwrap(),
+            "<value><string>hello world</string></value>",
+        );
+
+        assert_eq!(
+            &to_string(&None::<String>).unwrap(),
+            "<value><nil/></value>",
+        );
     }
 }
