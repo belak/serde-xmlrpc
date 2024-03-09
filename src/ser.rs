@@ -8,8 +8,7 @@ use crate::error::EncodingError;
 use crate::xml_ext::WriterExt;
 use crate::{Error, Result};
 
-#[doc(hidden)]
-pub struct Serializer<'a, W>
+pub(crate) struct Serializer<'a, W>
 where
     W: std::io::Write,
 {
@@ -20,7 +19,7 @@ impl<'a, W> Serializer<'a, W>
 where
     W: std::io::Write,
 {
-    pub fn new(writer: &'a mut Writer<W>) -> Self {
+    pub(crate) fn new(writer: &'a mut Writer<W>) -> Self {
         Serializer { writer }
     }
 }

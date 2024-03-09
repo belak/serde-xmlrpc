@@ -7,13 +7,12 @@ use crate::error::DecodingError;
 use crate::xml_ext::ReaderExt;
 use crate::{Error, Result};
 
-#[doc(hidden)]
-pub struct Deserializer<'a, 'r> {
-    pub(crate) reader: &'a mut Reader<&'r [u8]>,
+pub(crate) struct Deserializer<'a, 'r> {
+    reader: &'a mut Reader<&'r [u8]>,
 }
 
 impl<'a, 'r> Deserializer<'a, 'r> {
-    pub fn new(reader: &'a mut Reader<&'r [u8]>) -> Result<Self> {
+    pub(crate) fn new(reader: &'a mut Reader<&'r [u8]>) -> Result<Self> {
         let ret = Deserializer { reader };
         Ok(ret)
     }
@@ -186,16 +185,14 @@ impl<'de, 'a, 'r> serde::Deserializer<'de> for Deserializer<'a, 'r> {
         tuple_struct map struct enum identifier ignored_any
     );
 }
-
-#[doc(hidden)]
-pub struct SeqDeserializer<'a, 'r> {
+struct SeqDeserializer<'a, 'r> {
     reader: &'a mut Reader<&'r [u8]>,
     end: QName<'a>,
     end_maybe: Option<QName<'a>>,
 }
 
 impl<'a, 'r> SeqDeserializer<'a, 'r> {
-    pub fn new(
+    fn new(
         reader: &'a mut Reader<&'r [u8]>,
         end: QName<'a>,
         end_maybe: Option<QName<'a>>,
@@ -235,13 +232,12 @@ impl<'de, 'a, 'r> serde::de::SeqAccess<'de> for SeqDeserializer<'a, 'r> {
     }
 }
 
-#[doc(hidden)]
-pub struct MapDeserializer<'a, 'r> {
+struct MapDeserializer<'a, 'r> {
     reader: &'a mut Reader<&'r [u8]>,
 }
 
 impl<'a, 'r> MapDeserializer<'a, 'r> {
-    pub fn new(reader: &'a mut Reader<&'r [u8]>) -> Self {
+    fn new(reader: &'a mut Reader<&'r [u8]>) -> Self {
         MapDeserializer { reader }
     }
 }
@@ -293,13 +289,12 @@ impl<'de, 'a, 'r> serde::de::MapAccess<'de> for MapDeserializer<'a, 'r> {
     }
 }
 
-#[doc(hidden)]
-pub struct MapKeyDeserializer<'a, 'r> {
+struct MapKeyDeserializer<'a, 'r> {
     reader: &'a mut Reader<&'r [u8]>,
 }
 
 impl<'a, 'r> MapKeyDeserializer<'a, 'r> {
-    pub fn new(reader: &'a mut Reader<&'r [u8]>) -> Self {
+    fn new(reader: &'a mut Reader<&'r [u8]>) -> Self {
         MapKeyDeserializer { reader }
     }
 }
