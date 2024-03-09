@@ -32,13 +32,7 @@ impl<'a> ReaderExt for Reader<&'a [u8]> {
                     )
                     .into());
                 }
-                Err(e) => {
-                    return Err(DecodingError::UnexpectedError(
-                        e.into(),
-                        String::from_utf8_lossy(end.into_inner()).into(),
-                    )
-                    .into())
-                }
+                Err(e) => return Err(DecodingError::from(e).into()),
             };
         }
 

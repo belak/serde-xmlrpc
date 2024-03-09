@@ -70,9 +70,6 @@ pub enum DecodingError {
     #[error("unexpected tag: found {0}, expected {1}")]
     UnexpectedTag(String, String),
 
-    #[error("unexpected error: {0}, expected tag {1}")]
-    UnexpectedError(anyhow::Error, String),
-
     #[error("unexpected event: expected tag {0}")]
     UnexpectedEvent(String),
 

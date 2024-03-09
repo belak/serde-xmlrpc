@@ -16,6 +16,7 @@ transports, etc.
 * `value_to_string` changed to take `T` where `T: serde::ser::Serialize`
 * `request_to_string` changed to take an `impl Iterator<Item = Value>`
 * Structs changed to only allow string types as keys
+* Drop DecodingError::UnexpectedError variant
 
 ### v0.2.0
 
