@@ -5,24 +5,14 @@ use serde::forward_to_deserialize_any;
 
 use crate::{Error, Result, Value};
 
-pub struct Deserializer {
-    val: Value,
-}
-
-impl Deserializer {
-    pub fn from_value(input: Value) -> Self {
-        Deserializer { val: input }
-    }
-}
-
-impl<'de> serde::Deserializer<'de> for Deserializer {
+impl<'de> serde::Deserializer<'de> for Value {
     type Error = Error;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        match self.val {
+        match self {
             Value::Int(v) => visitor.visit_i32(v),
             Value::Int64(v) => visitor.visit_i64(v),
             Value::Bool(v) => visitor.visit_bool(v),
@@ -46,7 +36,7 @@ impl<'de> serde::Deserializer<'de> for Deserializer {
     where
         V: Visitor<'de>,
     {
-        if let Value::Nil = self.val {
+        if let Value::Nil = self {
             visitor.visit_none()
         } else {
             visitor.visit_some(self)
@@ -80,7 +70,7 @@ impl<'de> serde::de::SeqAccess<'de> for SeqDeserializer {
         T: serde::de::DeserializeSeed<'de>,
     {
         match self.iter.next() {
-            Some(value) => seed.deserialize(Deserializer::from_value(value)).map(Some),
+            Some(value) => seed.deserialize(value).map(Some),
             None => Ok(None),
         }
     }
@@ -110,8 +100,7 @@ impl<'de> serde::de::MapAccess<'de> for MapDeserializer {
         match self.iter.next() {
             Some((key, value)) => {
                 self.value = Some(value);
-                seed.deserialize(Deserializer::from_value(Value::String(key)))
-                    .map(Some)
+                seed.deserialize(Value::String(key)).map(Some)
             }
             None => Ok(None),
         }
@@ -122,7 +111,7 @@ impl<'de> serde::de::MapAccess<'de> for MapDeserializer {
         T: serde::de::DeserializeSeed<'de>,
     {
         match self.value.take() {
-            Some(value) => seed.deserialize(Deserializer::from_value(value)),
+            Some(value) => seed.deserialize(value),
             None => Err(serde::de::Error::custom("value is missing")),
         }
     }
@@ -168,21 +157,20 @@ mod test {
         use std::collections::BTreeMap;
         use std::iter::FromIterator;
 
-        use super::Deserializer;
         use crate::Value;
 
         let x = Value::Int(42);
-        let y = i32::deserialize(Deserializer::from_value(x)).unwrap();
+        let y = i32::deserialize(x).unwrap();
         assert_eq!(y, 42);
 
         let x = Value::Array(vec![Value::String("hello world".to_string())]);
-        let y: Vec<String> = Vec::deserialize(Deserializer::from_value(x)).unwrap();
+        let y: Vec<String> = Vec::deserialize(x).unwrap();
         assert_eq!(y, vec!["hello world".to_string()]);
 
         let x = Value::Struct(BTreeMap::from_iter(
             vec![("hello".to_string(), Value::String("world".to_string()))].into_iter(),
         ));
-        let y = Test::deserialize(Deserializer::from_value(x)).unwrap();
+        let y = Test::deserialize(x).unwrap();
         assert_eq!(
             y,
             Test {
@@ -191,19 +179,19 @@ mod test {
         );
 
         let x = Value::Struct(BTreeMap::new());
-        let y = Test2::deserialize(Deserializer::from_value(x)).unwrap();
+        let y = Test2::deserialize(x).unwrap();
         assert_eq!(y, Test2 { val: None },);
 
         let x = Value::Struct(BTreeMap::from_iter(
             vec![("val".to_string(), Value::Nil)].into_iter(),
         ));
-        let y = Test2::deserialize(Deserializer::from_value(x)).unwrap();
+        let y = Test2::deserialize(x).unwrap();
         assert_eq!(y, Test2 { val: None },);
 
         let x = Value::Struct(BTreeMap::from_iter(
             vec![("val".to_string(), Value::String("hello".to_string()))].into_iter(),
         ));
-        let y = Test2::deserialize(Deserializer::from_value(x)).unwrap();
+        let y = Test2::deserialize(x).unwrap();
         assert_eq!(
             y,
             Test2 {

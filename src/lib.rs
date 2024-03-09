@@ -97,9 +97,8 @@ pub fn response_to_string(params: impl Iterator<Item = Value>) -> Result<String>
     for value in params {
         writer.write_start_tag("param")?;
 
-        let deserializer = value::Deserializer::from_value(value);
         let serializer = ValueSerializer::new(&mut writer);
-        transcode(deserializer, serializer)?;
+        transcode(value, serializer)?;
 
         writer.write_end_tag("param")?;
     }
@@ -196,9 +195,8 @@ pub fn request_to_string(name: &str, args: impl Iterator<Item = Value>) -> Resul
     for value in args {
         writer.write_start_tag("param")?;
 
-        let deserializer = value::Deserializer::from_value(value);
         let serializer = ValueSerializer::new(&mut writer);
-        transcode(deserializer, serializer)?;
+        transcode(value, serializer)?;
 
         writer.write_end_tag("param")?;
     }

@@ -5,7 +5,6 @@ use iso8601::DateTime;
 pub mod de;
 pub mod ser;
 
-pub use de::Deserializer;
 pub use ser::Serializer;
 
 /// Convert a `T` into `serde_xmlrpc::Value` which is an enum that can represent
@@ -43,8 +42,7 @@ pub fn from_value<T>(value: Value) -> crate::Result<T>
 where
     T: serde::de::DeserializeOwned,
 {
-    let d = Deserializer::from_value(value);
-    T::deserialize(d)
+    T::deserialize(value)
 }
 
 /// Represents any single valid xmlrpc "Value"

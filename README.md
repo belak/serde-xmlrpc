@@ -17,6 +17,7 @@ transports, etc.
 * `request_to_string` changed to take an `impl Iterator<Item = Value>`
 * Structs changed to only allow string types as keys
 * Drop DecodingError::UnexpectedError variant
+* Impl `serde::Deserialize` directly on `Value` rather than through a wrapper type
 
 ### v0.2.0
 

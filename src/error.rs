@@ -153,8 +153,7 @@ mod tests {
         };
 
         let value: Value = input.serialize(crate::value::Serializer::new()).unwrap();
-        let deserializer = crate::value::Deserializer::from_value(value);
-        let new_input: Fault = Fault::deserialize(deserializer).unwrap();
+        let new_input: Fault = Fault::deserialize(value).unwrap();
 
         assert_eq!(new_input, input);
     }
