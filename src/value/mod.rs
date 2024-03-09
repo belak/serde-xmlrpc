@@ -39,7 +39,10 @@ where
 /// let val = Value::Array(vec![Value::Int(3), Value::String("Test".to_string())]);
 /// let (x, y): (i32, String) = from_value(val).unwrap();
 /// ```
-pub fn from_value<T: serde::de::DeserializeOwned>(value: Value) -> crate::Result<T> {
+pub fn from_value<T>(value: Value) -> crate::Result<T>
+where
+    T: serde::de::DeserializeOwned,
+{
     let d = Deserializer::from_value(value);
     T::deserialize(d)
 }
