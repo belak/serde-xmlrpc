@@ -1,30 +1,75 @@
-use quick_xml::{Reader, Writer};
+use std::result;
 
-mod error;
-mod utils;
-mod value;
+use thiserror::Error as ThisError;
 
-use utils::{ReaderExt, WriterExt};
+/// Errors that can occur when trying to perform an XML-RPC request.
+///
+/// This can be a lower-level error (for example, the HTTP request failed), a problem with the
+/// server (maybe it's not implementing XML-RPC correctly), or just a failure to execute the
+/// operation.
+#[deprecated(since = "0.1.1", note = "please use `serde_xmlrpc::Error` instead")]
+#[derive(ThisError, Debug)]
+pub enum Error {
+    /// The response could not be parsed. This can happen when the server doesn't correctly
+    /// implement the XML-RPC spec.
+    #[error("parse error: {0}")]
+    ParseError(String),
 
-pub use crate::error::{Error, Result};
-pub use crate::value::Value;
+    /// The response could not be encoded.
+    #[error("encoding error: {0}")]
+    EncodingError(String),
+
+    /// The server returned a `<fault>` response, indicating that the execution of the call
+    /// encountered a problem (for example, an invalid (number of) arguments was passed).
+    #[error("server fault: {0}")]
+    Fault(#[from] Fault),
+}
+
+impl From<serde_xmlrpc::Error> for Error {
+    fn from(err: serde_xmlrpc::Error) -> Self {
+        match err {
+            serde_xmlrpc::Error::DecodingError(err) => Error::ParseError(err.to_string()),
+            serde_xmlrpc::Error::EncodingError(err) => Error::EncodingError(err.to_string()),
+            serde_xmlrpc::Error::Fault(fault) => Error::Fault(fault.into()),
+        }
+    }
+}
+
+#[deprecated(since = "0.1.1", note = "please use `serde_xmlrpc::Result` instead")]
+pub type Result<T> = result::Result<T, Error>;
+
+/// A `<fault>` response, indicating that a request failed.
+///
+/// The XML-RPC specification requires that a `<faultCode>` and `<faultString>` is returned in the
+/// `<fault>` case, further describing the error.
+#[deprecated(since = "0.1.2", note = "please use `serde_xmlrpc::Fault` instead")]
+#[derive(ThisError, Debug, PartialEq, Eq)]
+#[error("{fault_string} ({fault_code})")]
+pub struct Fault {
+    /// An application-specific error code.
+    pub fault_code: i32,
+    /// Human-readable error description.
+    pub fault_string: String,
+}
+
+impl From<serde_xmlrpc::Fault> for Fault {
+    fn from(fault: serde_xmlrpc::Fault) -> Self {
+        Fault {
+            fault_code: fault.fault_code,
+            fault_string: fault.fault_string,
+        }
+    }
+}
+
+#[deprecated(since = "0.1.2", note = "please use `serde_xmlrpc::Value` instead")]
+pub type Value = serde_xmlrpc::Value;
 
 #[deprecated(
     since = "0.1.1",
     note = "please use `serde_xmlrpc::response_from_str` instead"
 )]
 pub fn parse_response(data: &str) -> Result<Value> {
-    let mut reader = Reader::from_str(data);
-    reader.expand_empty_elements(true);
-    reader.trim_text(true);
-
-    let mut buf = Vec::new();
-
-    // We expect a value tag first, followed by a value. Note that the inner
-    // read will properly handle ensuring we get a closing value tag.
-    reader.expect_tag(b"methodResponse", &mut buf)?;
-
-    Value::read_response_from_reader(&mut reader, &mut buf)
+    Ok(serde_xmlrpc::response_from_str(data)?)
 }
 
 #[deprecated(
@@ -32,17 +77,7 @@ pub fn parse_response(data: &str) -> Result<Value> {
     note = "please use `serde_xmlrpc::value_from_str` instead"
 )]
 pub fn parse_value(data: &str) -> Result<Value> {
-    let mut reader = Reader::from_str(data);
-    reader.expand_empty_elements(true);
-    reader.trim_text(true);
-
-    let mut buf = Vec::new();
-
-    // We expect a value tag first, followed by a value. Note that the inner
-    // read will properly handle ensuring we get a closing value tag.
-    reader.expect_tag(b"value", &mut buf)?;
-
-    Value::read_value_from_reader(&mut reader, &mut buf)
+    Ok(serde_xmlrpc::value_from_str(data)?)
 }
 
 #[deprecated(
@@ -50,30 +85,7 @@ pub fn parse_value(data: &str) -> Result<Value> {
     note = "please use `serde_xmlrpc::request_to_string` instead"
 )]
 pub fn stringify_request(name: &str, args: &[Value]) -> Result<String> {
-    let mut buf = Vec::new();
-    let mut writer = Writer::new(&mut buf);
-
-    writer
-        .write(br#"<?xml version="1.0" encoding="utf-8"?>"#)
-        .map_err(error::EncodingError::from)?;
-
-    writer.write_start_tag(b"methodCall")?;
-    writer.write_tag(b"methodName", name)?;
-
-    writer.write_start_tag(b"params")?;
-    for value in args {
-        writer.write_start_tag(b"param")?;
-
-        writer
-            .write(value.stringify()?.as_ref())
-            .map_err(error::EncodingError::from)?;
-
-        writer.write_end_tag(b"param")?;
-    }
-    writer.write_end_tag(b"params")?;
-    writer.write_end_tag(b"methodCall")?;
-
-    Ok(String::from_utf8(buf).map_err(error::EncodingError::from)?)
+    Ok(serde_xmlrpc::request_to_string(name, args.to_vec())?)
 }
 
 #[cfg(test)]
@@ -256,9 +268,9 @@ mod tests {
         .unwrap_err();
 
         match err {
-            error::Error::Fault(f) => assert_eq!(
+            Error::Fault(f) => assert_eq!(
                 f,
-                error::Fault {
+                Fault {
                     fault_code: 4,
                     fault_string: "Too many parameters.".into(),
                 }
