@@ -182,9 +182,9 @@ pub fn request_from_str(request: &str) -> Result<(String, Vec<Value>)> {
 /// which would be a valid body for an xmlrpc request.
 ///
 /// ```
-/// let body = serde_xmlrpc::request_to_string("myMethod", vec![1.into(), "param2".into()]);
+/// let body = serde_xmlrpc::request_to_string("myMethod", vec![1.into(), "param2".into()].into_iter());
 /// ```
-pub fn request_to_string(name: &str, args: Vec<Value>) -> Result<String> {
+pub fn request_to_string(name: &str, args: impl Iterator<Item = Value>) -> Result<String> {
     let mut writer = Writer::new(Vec::new());
 
     writer.write_decl()?;
@@ -272,7 +272,7 @@ mod tests {
     #[test]
     fn test_stringify_request() {
         assert_eq!(
-            request_to_string("hello world", vec![]).unwrap(),
+            request_to_string("hello world", vec![].into_iter()).unwrap(),
             r#"<?xml version="1.0" encoding="utf-8"?><methodCall><methodName>hello world</methodName><params></params></methodCall>"#.to_owned()
         )
     }

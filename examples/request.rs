@@ -10,7 +10,8 @@ fn main() {
     let client = reqwest::blocking::Client::new(); // Create our client
 
     // Use this library to generate the body of the http request
-    let body = serde_xmlrpc::request_to_string("getTopicTypes", vec![my_id.into()]).unwrap();
+    let body =
+        serde_xmlrpc::request_to_string("getTopicTypes", vec![my_id.into()].into_iter()).unwrap();
 
     // Send our request to the server and get a response back (using blocking API for simplicity)
     let response = client
