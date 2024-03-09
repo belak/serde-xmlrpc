@@ -140,6 +140,10 @@ impl<'de> serde::Deserialize<'de> for Value {
     where
         D: serde::Deserializer<'de>,
     {
+        // TODO: this isn't quite right - the error type doesn't match up.
+        // Unfortunately, there doesn't seem to be a way to solve this, as it
+        // requires the error type to match up between the serializer and
+        // deserializer, and they have incompatible error types.
         serde_transcode::transcode(deserializer, super::Serializer::new())
             .map_err(serde::de::Error::custom)
     }

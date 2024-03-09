@@ -4,14 +4,6 @@ use quick_xml::{Reader, Writer};
 
 use crate::error::{DecodingError, EncodingError, Result};
 
-mod map;
-mod seq;
-mod value;
-
-pub use map::{MapDeserializer, MapSerializer};
-pub use seq::{SeqDeserializer, SeqSerializer};
-pub use value::{Deserializer as ValueDeserializer, Serializer as ValueSerializer};
-
 pub(crate) trait ReaderExt {
     fn expect_tag(&mut self, end: QName) -> Result<()>;
 }

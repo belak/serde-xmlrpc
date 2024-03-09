@@ -32,6 +32,18 @@ where
     value.serialize(Serializer)
 }
 
+/// Attempts to deserialize the Value into the given type, equivalent API of
+/// [serde_json::from_value](https://docs.rs/serde_json/latest/serde_json/fn.from_value.html).
+/// ```
+/// use serde_xmlrpc::{from_value, Value};
+/// let val = Value::Array(vec![Value::Int(3), Value::String("Test".to_string())]);
+/// let (x, y): (i32, String) = from_value(val).unwrap();
+/// ```
+pub fn from_value<T: serde::de::DeserializeOwned>(value: Value) -> crate::Result<T> {
+    let d = Deserializer::from_value(value);
+    T::deserialize(d)
+}
+
 /// Represents any single valid xmlrpc "Value"
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {

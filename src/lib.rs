@@ -5,23 +5,27 @@ use quick_xml::{events::Event, name::QName, Reader, Writer};
 use serde::Deserialize;
 use serde_transcode::transcode;
 
+mod de;
 mod error;
-mod util;
+mod ser;
 mod value;
+mod xml_ext;
 
-use util::{ReaderExt, ValueDeserializer, ValueSerializer, WriterExt};
+use de::Deserializer as ValueDeserializer;
+use ser::Serializer as ValueSerializer;
+use xml_ext::{ReaderExt, WriterExt};
 
 pub use error::{Error, Fault, Result};
-pub use value::{to_value, Value};
+pub use value::{from_value, to_value, Value};
 
 /// Parses the body of an xmlrpc http request and attempts to convert it to the desired type.
 /// ```
 /// let val: String = serde_xmlrpc::response_from_str(
 /// r#"<?xml version="1.0" encoding="utf-8"?>
 /// <methodResponse>
-///  <params>
-///    <param><value><string>hello world</string></value></param>
-///  </params>
+///   <params>
+///     <param><value><string>hello world</string></value></param>
+///   </params>
 /// </methodResponse>"#).unwrap();
 ///
 /// assert_eq!(val, "hello world".to_string());
@@ -66,14 +70,9 @@ where
             reader.expect_tag(QName(b"value"))?;
             let deserializer = ValueDeserializer::new(&mut reader)?;
             let fault: Fault = Fault::deserialize(deserializer)?;
-
-            // Pull the reader back out so we can verify the end tag.
-            //let mut reader = deserializer.into_inner();
-
             reader
                 .read_to_end(e.name())
                 .map_err(error::DecodingError::from)?;
-
             Err(fault.into())
         }
         e => Err(error::DecodingError::UnexpectedEvent(format!("{:?}", e)).into()),
@@ -211,18 +210,19 @@ pub fn request_to_string(name: &str, args: Vec<Value>) -> Result<String> {
 
 /// Attempts to parse an individual value out of a str.
 /// ```
-/// let x = serde_xmlrpc::value_from_str("<value><int>42</int></value>").unwrap().as_i32();
-/// assert_eq!(x, Some(42));
+/// let x: i32 = serde_xmlrpc::value_from_str("<value><int>42</int></value>").unwrap();
+/// assert_eq!(x, 42);
 /// ```
-pub fn value_from_str(input: &str) -> Result<Value> {
+pub fn value_from_str<'a, T>(input: &'a str) -> Result<T>
+where
+    T: serde::de::Deserialize<'a>,
+{
     let mut reader = Reader::from_str(input);
     reader.expand_empty_elements(true);
     reader.trim_text(true);
 
     reader.expect_tag(QName(b"value"))?;
-    let deserializer = ValueDeserializer::new(&mut reader)?;
-    let serializer = value::Serializer::new();
-    transcode(deserializer, serializer)
+    T::deserialize(ValueDeserializer::new(&mut reader)?)
 }
 
 /// Attempts to convert any data type which can be represented as an xmlrpc value into a String.
@@ -231,15 +231,14 @@ pub fn value_from_str(input: &str) -> Result<Value> {
 /// let b = serde_xmlrpc::value_to_string("Text");
 /// let c = serde_xmlrpc::value_to_string(false);
 /// ```
-pub fn value_to_string<I>(val: I) -> Result<String>
+pub fn value_to_string<T>(val: T) -> Result<String>
 where
-    I: Into<Value>,
+    T: serde::Serialize,
 {
-    let d = value::Deserializer::from_value(val.into());
     let mut writer = Writer::new(Vec::new());
-    let s = ValueSerializer::new(&mut writer);
-    transcode(d, s)?;
-    Ok(String::from_utf8(writer.into_inner()).map_err(error::EncodingError::from)?)
+    let ser = crate::ser::Serializer::new(&mut writer);
+    val.serialize(ser)?;
+    Ok(String::from_utf8(writer.into_inner()).map_err(error::DecodingError::from)?)
 }
 
 /// Attempts to convert a Vec of values to any data type which can be deserialized.
@@ -266,18 +265,6 @@ pub fn from_values<T: serde::de::DeserializeOwned>(values: Vec<Value>) -> Result
     from_value(val)
 }
 
-/// Attempts to deserialize the Value into the given type, equivalent API of
-/// [serde_json::from_value](https://docs.rs/serde_json/latest/serde_json/fn.from_value.html).
-/// ```
-/// use serde_xmlrpc::{from_value, Value};
-/// let val = Value::Array(vec![Value::Int(3), Value::String("Test".to_string())]);
-/// let (x, y): (i32, String) = from_value(val).unwrap();
-/// ```
-pub fn from_value<T: serde::de::DeserializeOwned>(value: Value) -> Result<T> {
-    let d = value::Deserializer::from_value(value);
-    T::deserialize(d)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -294,21 +281,21 @@ mod tests {
     #[test]
     fn parse_int_values() {
         assert_eq!(
-            value_from_str("<value><int>42</int></value>")
+            value_from_str::<Value>("<value><int>42</int></value>")
                 .unwrap()
                 .as_i32(),
             Some(42)
         );
 
         assert_eq!(
-            value_from_str("<value><int>-42</int></value>")
+            value_from_str::<Value>("<value><int>-42</int></value>")
                 .unwrap()
                 .as_i32(),
             Some(-42)
         );
 
         assert_eq!(
-            value_from_str("<value><int>2147483647</int></value>")
+            value_from_str::<Value>("<value><int>2147483647</int></value>")
                 .unwrap()
                 .as_i32(),
             Some(2147483647)
@@ -319,14 +306,14 @@ mod tests {
     #[test]
     fn parse_long_values() {
         assert_eq!(
-            value_from_str("<value><int>42</int></value>")
+            value_from_str::<Value>("<value><int>42</int></value>")
                 .unwrap()
                 .as_i64(),
             Some(42)
         );
 
         assert_eq!(
-            value_from_str("<value><int>9223372036854775807</int></value>")
+            value_from_str::<Value>("<value><int>9223372036854775807</int></value>")
                 .unwrap()
                 .as_i64(),
             Some(9223372036854775807)
@@ -337,13 +324,13 @@ mod tests {
     #[test]
     fn parse_boolean_values() {
         assert_eq!(
-            value_from_str("<value><boolean>1</boolean></value>")
+            value_from_str::<Value>("<value><boolean>1</boolean></value>")
                 .unwrap()
                 .as_bool(),
             Some(true)
         );
         assert_eq!(
-            value_from_str("<value><boolean>0</boolean></value>")
+            value_from_str::<Value>("<value><boolean>0</boolean></value>")
                 .unwrap()
                 .as_bool(),
             Some(false)
@@ -355,49 +342,54 @@ mod tests {
     #[test]
     fn parse_string_values() {
         assert_eq!(
-            value_from_str("<value><string>hello</string></value>")
+            value_from_str::<Value>("<value><string>hello</string></value>")
                 .unwrap()
                 .as_str(),
             Some("hello")
         );
 
         assert_eq!(
-            value_from_str("<value>world</value>").unwrap().as_str(),
+            value_from_str::<Value>("<value>world</value>")
+                .unwrap()
+                .as_str(),
             Some("world")
         );
 
-        assert_eq!(value_from_str("<value />").unwrap().as_str(), Some(""));
+        assert_eq!(
+            value_from_str::<Value>("<value />").unwrap().as_str(),
+            Some("")
+        );
     }
 
     /// A double-precision IEEE 754 floating point number (`<double>`).
     #[test]
     fn parse_double_values() {
         assert_eq!(
-            value_from_str("<value><double>1</double></value>")
+            value_from_str::<Value>("<value><double>1</double></value>")
                 .unwrap()
                 .as_f64(),
             Some(1.0)
         );
         assert_eq!(
-            value_from_str("<value><double>0</double></value>")
+            value_from_str::<Value>("<value><double>0</double></value>")
                 .unwrap()
                 .as_f64(),
             Some(0.0)
         );
         assert_eq!(
-            value_from_str("<value><double>42</double></value>")
+            value_from_str::<Value>("<value><double>42</double></value>")
                 .unwrap()
                 .as_f64(),
             Some(42.0)
         );
         assert_eq!(
-            value_from_str("<value><double>3.14</double></value>")
+            value_from_str::<Value>("<value><double>3.14</double></value>")
                 .unwrap()
                 .as_f64(),
             Some(3.14)
         );
         assert_eq!(
-            value_from_str("<value><double>-3.14</double></value>")
+            value_from_str::<Value>("<value><double>-3.14</double></value>")
                 .unwrap()
                 .as_f64(),
             Some(-3.14)
@@ -410,7 +402,7 @@ mod tests {
     #[test]
     fn parse_base64_values() {
         assert_eq!(
-            value_from_str("<value><base64>aGVsbG8gd29ybGQ=</base64></value>")
+            value_from_str::<Value>("<value><base64>aGVsbG8gd29ybGQ=</base64></value>")
                 .unwrap()
                 .as_bytes(),
             Some(&b"hello world"[..])
@@ -423,7 +415,7 @@ mod tests {
     #[test]
     fn parse_array_values() {
         assert_eq!(
-            value_from_str(
+            value_from_str::<Value>(
                 "<value><array><data><value></value><value><nil /></value></data></array></value>"
             )
             .unwrap()
@@ -436,7 +428,7 @@ mod tests {
     #[test]
     fn parse_nil_values() {
         assert_eq!(
-            value_from_str("<value><nil /></value>").unwrap(),
+            value_from_str::<Value>("<value><nil /></value>").unwrap(),
             Value::Nil
         );
     }
@@ -547,5 +539,73 @@ mod tests {
         assert_eq!(a, 32);
         assert_eq!(b, 1.0);
         assert_eq!(c, "hello");
+    }
+
+    #[test]
+    fn test_from_str() {
+        let x: i32 = value_from_str("<value><int>42</int></value>").unwrap();
+        assert_eq!(x, 42);
+
+        let x: bool = value_from_str("<value><boolean>1</boolean></value>").unwrap();
+        assert_eq!(x, true);
+
+        let x: Vec<i32> = value_from_str("<value><array><data><value><int>1</int></value><value><int>2</int></value><value><int>3</int></value></data></array></value>").unwrap();
+        assert_eq!(x, vec![1, 2, 3]);
+
+        let x: Test = value_from_str("<value><struct><member><name>hello</name><value><string>world</string></value></member></struct></value>").unwrap();
+        assert_eq!(
+            x,
+            Test {
+                hello: "world".to_string()
+            }
+        );
+
+        let x: Option<String> = value_from_str("<value><nil/></value>").unwrap();
+        assert_eq!(x, None);
+
+        let x: Option<String> = value_from_str("<value>hello world</value>").unwrap();
+        assert_eq!(x, Some("hello world".to_string()));
+    }
+
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct Test {
+        hello: String,
+    }
+
+    #[test]
+    fn test_to_string() {
+        assert_eq!(
+            &value_to_string(&42).unwrap(),
+            "<value><int>42</int></value>"
+        );
+
+        assert_eq!(
+            &value_to_string(&true).unwrap(),
+            "<value><boolean>1</boolean></value>"
+        );
+
+        assert_eq!(
+            &value_to_string(&vec![1, 2, 3]).unwrap(),
+            "<value><array><data><value><int>1</int></value><value><int>2</int></value><value><int>3</int></value></data></array></value>"
+        );
+
+        assert_eq!(
+            &value_to_string(&Test {
+                hello: "world".to_string()
+            }).unwrap(),
+            "<value><struct><member><name>hello</name><value><string>world</string></value></member></struct></value>",
+        );
+
+        assert_eq!(
+            &value_to_string(&Some("hello world".to_string())).unwrap(),
+            "<value><string>hello world</string></value>",
+        );
+
+        assert_eq!(
+            &value_to_string(&None::<String>).unwrap(),
+            "<value><nil/></value>",
+        );
     }
 }
