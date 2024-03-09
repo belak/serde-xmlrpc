@@ -60,6 +60,8 @@ impl serde::Serializer for Serializer {
     fn serialize_u64(self, _v: u64) -> Result<Self::Ok> {
         // This type doesn't fit inside an i32 or i64 which are the only
         // officially supported int types in xmlrpc.
+
+        // TODO: replace with Error
         unimplemented!();
     }
 
@@ -128,6 +130,7 @@ impl serde::Serializer for Serializer {
     where
         T: Serialize,
     {
+        // TODO: replace with Error
         unimplemented!();
     }
 

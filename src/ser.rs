@@ -168,6 +168,7 @@ where
     where
         T: ?Sized + serde::Serialize,
     {
+        // TODO: replace with Error
         unimplemented!();
     }
 
