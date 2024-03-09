@@ -107,7 +107,7 @@ impl<'de, 'a, 'r> serde::Deserializer<'de> for Deserializer<'a, 'r> {
                     )?
                 }
 
-                QName(b"struct") => visitor.visit_map(MapDeserializer::new(self.reader, b"struct"))?,
+                QName(b"struct") => visitor.visit_map(MapDeserializer::new(self.reader))?,
 
                 QName(b"array") => {
                     visitor.visit_seq(SeqDeserializer::new(self.reader, QName(b"data"), Some(QName(b"array")))?)?
@@ -238,12 +238,11 @@ impl<'de, 'a, 'r> serde::de::SeqAccess<'de> for SeqDeserializer<'a, 'r> {
 #[doc(hidden)]
 pub struct MapDeserializer<'a, 'r> {
     reader: &'a mut Reader<&'r [u8]>,
-    end: &'a [u8],
 }
 
 impl<'a, 'r> MapDeserializer<'a, 'r> {
-    pub fn new(reader: &'a mut Reader<&'r [u8]>, end: &'a [u8]) -> Self {
-        MapDeserializer { reader, end }
+    pub fn new(reader: &'a mut Reader<&'r [u8]>) -> Self {
+        MapDeserializer { reader }
     }
 }
 
@@ -257,16 +256,15 @@ impl<'de, 'a, 'r> serde::de::MapAccess<'de> for MapDeserializer<'a, 'r> {
         match self.reader.read_event() {
             // The base case is that we found a closing tag for the tag we were
             // looking for.
-            Ok(Event::End(ref e)) if e.name() == QName(self.end) => Ok(None),
+            Ok(Event::End(ref e)) if e.name() == QName(b"struct") => Ok(None),
 
             // If we got a member start tag, we know there's a key and value
             // coming.
             Ok(Event::Start(ref e)) if e.name() == QName(b"member") => {
                 self.reader.expect_tag(QName(b"name"))?;
-                Ok(Some(seed.deserialize(MapKeyDeserializer::new(
-                    self.reader,
-                    b"name",
-                ))?))
+                Ok(Some(
+                    seed.deserialize(MapKeyDeserializer::new(self.reader))?,
+                ))
             }
 
             // Any other event or error is unexpected and is an actual error.
@@ -298,12 +296,11 @@ impl<'de, 'a, 'r> serde::de::MapAccess<'de> for MapDeserializer<'a, 'r> {
 #[doc(hidden)]
 pub struct MapKeyDeserializer<'a, 'r> {
     reader: &'a mut Reader<&'r [u8]>,
-    end: &'a [u8],
 }
 
 impl<'a, 'r> MapKeyDeserializer<'a, 'r> {
-    pub fn new(reader: &'a mut Reader<&'r [u8]>, end: &'a [u8]) -> Self {
-        MapKeyDeserializer { reader, end }
+    pub fn new(reader: &'a mut Reader<&'r [u8]>) -> Self {
+        MapKeyDeserializer { reader }
     }
 }
 
@@ -316,7 +313,7 @@ impl<'de, 'a, 'r> serde::Deserializer<'de> for MapKeyDeserializer<'a, 'r> {
     {
         visitor.visit_string(
             self.reader
-                .read_text(QName(self.end))
+                .read_text(QName(b"name"))
                 .map_err(DecodingError::from)?
                 .into(),
         )

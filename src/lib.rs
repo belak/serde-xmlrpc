@@ -233,7 +233,7 @@ where
 /// ```
 pub fn value_to_string<T>(val: T) -> Result<String>
 where
-    T: serde::Serialize,
+    T: serde::ser::Serialize,
 {
     let mut writer = Writer::new(Vec::new());
     let ser = crate::ser::Serializer::new(&mut writer);

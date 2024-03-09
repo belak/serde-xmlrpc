@@ -345,9 +345,7 @@ where
     where
         T: ?Sized + serde::Serialize,
     {
-        serde::ser::SerializeMap::serialize_key(self, key)?;
-        serde::ser::SerializeMap::serialize_value(self, value)?;
-        Ok(())
+        serde::ser::SerializeMap::serialize_entry(self, key, value)
     }
 
     fn end(self) -> Result<Self::Ok> {
@@ -366,9 +364,7 @@ where
     where
         T: ?Sized + serde::Serialize,
     {
-        serde::ser::SerializeMap::serialize_key(self, key)?;
-        serde::ser::SerializeMap::serialize_value(self, value)?;
-        Ok(())
+        serde::ser::SerializeMap::serialize_entry(self, key, value)
     }
 
     fn end(self) -> Result<Self::Ok> {
@@ -408,11 +404,8 @@ where
     type SerializeStruct = serde::ser::Impossible<Self::Ok, Self::Error>;
     type SerializeStructVariant = serde::ser::Impossible<Self::Ok, Self::Error>;
 
-    // TODO: deprecate this behavior
-    fn serialize_bool(self, v: bool) -> Result<Self::Ok> {
-        self.writer
-            .write_safe_tag("name", if v { "1" } else { "0" })?;
-        Ok(())
+    fn serialize_bool(self, _v: bool) -> Result<Self::Ok> {
+        Err(key_must_be_a_string())
     }
 
     fn serialize_i8(self, v: i8) -> Result<Self::Ok> {
@@ -427,9 +420,8 @@ where
         self.serialize_i64(v as i64)
     }
 
-    // TODO: deprecate this behavior
-    fn serialize_i64(self, v: i64) -> Result<Self::Ok> {
-        self.writer.write_safe_tag("name", &v.to_string())
+    fn serialize_i64(self, _v: i64) -> Result<Self::Ok> {
+        Err(key_must_be_a_string())
     }
 
     fn serialize_u8(self, v: u8) -> Result<Self::Ok> {
@@ -444,33 +436,28 @@ where
         self.serialize_u64(v as u64)
     }
 
-    // TODO: deprecate this behavior
-    fn serialize_u64(self, v: u64) -> Result<Self::Ok> {
-        self.writer.write_safe_tag("name", &v.to_string())
+    fn serialize_u64(self, _v: u64) -> Result<Self::Ok> {
+        Err(key_must_be_a_string())
     }
 
     fn serialize_f32(self, v: f32) -> Result<Self::Ok> {
         self.serialize_f64(v as f64)
     }
 
-    // TODO: deprecate this behavior
-    fn serialize_f64(self, v: f64) -> Result<Self::Ok> {
-        self.writer.write_safe_tag("name", &v.to_string())
+    fn serialize_f64(self, _v: f64) -> Result<Self::Ok> {
+        Err(key_must_be_a_string())
     }
 
-    // TODO: deprecate this behavior
-    fn serialize_char(self, v: char) -> Result<Self::Ok> {
-        self.writer.write_safe_tag("name", &v.to_string())
+    fn serialize_char(self, _v: char) -> Result<Self::Ok> {
+        Err(key_must_be_a_string())
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok> {
         self.writer.write_tag("name", v)
     }
 
-    // TODO: deprecate this behavior
-    fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok> {
-        self.writer
-            .write_safe_tag("name", &BASE64_STANDARD.encode(v))
+    fn serialize_bytes(self, _v: &[u8]) -> Result<Self::Ok> {
+        Err(key_must_be_a_string())
     }
 
     fn serialize_none(self) -> Result<Self::Ok> {

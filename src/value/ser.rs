@@ -265,32 +265,15 @@ impl serde::ser::SerializeMap for SerializeMap {
     where
         T: Serialize,
     {
-        // We can only serialize keys if they can be converted to strings
+        // While we could technically allow for any type which can be serialized
+        // to a string to be used as a key, it's a bit cleaner to only allow
+        // "string" types.
         match key.serialize(Serializer)? {
-            Value::Int(v) => {
-                self.next_key = Some(v.to_string());
-                Ok(())
-            }
-            Value::Int64(v) => {
-                self.next_key = Some(v.to_string());
-                Ok(())
-            }
-            Value::Bool(v) => {
-                self.next_key = Some(v.to_string());
-                Ok(())
-            }
             Value::String(s) => {
                 self.next_key = Some(s);
                 Ok(())
             }
-            Value::Double(v) => {
-                self.next_key = Some(v.to_string());
-                Ok(())
-            }
-            _ => Err(EncodingError::InvalidKeyType(
-                "int, int64, bool, string, char, or float".to_string(),
-            )
-            .into()),
+            _ => Err(EncodingError::InvalidKeyType("string".to_string()).into()),
         }
     }
 
@@ -322,8 +305,7 @@ impl serde::ser::SerializeStruct for SerializeMap {
     where
         T: Serialize,
     {
-        serde::ser::SerializeMap::serialize_key(self, key)?;
-        serde::ser::SerializeMap::serialize_value(self, value)
+        serde::ser::SerializeMap::serialize_entry(self, key, value)
     }
 
     fn end(self) -> Result<Value> {
@@ -339,8 +321,7 @@ impl serde::ser::SerializeStructVariant for SerializeMap {
     where
         T: Serialize,
     {
-        serde::ser::SerializeMap::serialize_key(self, key)?;
-        serde::ser::SerializeMap::serialize_value(self, value)
+        serde::ser::SerializeMap::serialize_entry(self, key, value)
     }
 
     fn end(self) -> Result<Value> {
