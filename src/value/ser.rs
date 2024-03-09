@@ -5,7 +5,27 @@ use serde::Serialize;
 use crate::error::EncodingError;
 use crate::{Error, Result, Value};
 
-pub struct Serializer;
+impl serde::ser::Serialize for Value {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Value::Int(i) => serializer.serialize_i32(*i),
+            Value::Int64(i) => serializer.serialize_i64(*i),
+            Value::Bool(b) => serializer.serialize_bool(*b),
+            Value::Double(f) => serializer.serialize_f64(*f),
+            Value::String(s) => serializer.serialize_str(s),
+            Value::DateTime(dt) => serializer.serialize_str(&dt.to_string()),
+            Value::Base64(b) => serializer.serialize_bytes(b),
+            Value::Array(a) => a.serialize(serializer),
+            Value::Struct(m) => m.serialize(serializer),
+            Value::Nil => serializer.serialize_none(),
+        }
+    }
+}
+
+pub(crate) struct Serializer;
 
 impl Serializer {
     pub fn new() -> Self {
@@ -93,7 +113,7 @@ impl serde::Serializer for Serializer {
     where
         T: Serialize,
     {
-        value.serialize(Serializer)
+        value.serialize(self)
     }
 
     fn serialize_unit(self) -> Result<Self::Ok> {
@@ -117,7 +137,7 @@ impl serde::Serializer for Serializer {
     where
         T: Serialize,
     {
-        value.serialize(Serializer)
+        value.serialize(self)
     }
 
     fn serialize_newtype_variant<T: ?Sized>(
@@ -130,7 +150,7 @@ impl serde::Serializer for Serializer {
     where
         T: Serialize,
     {
-        // TODO: replace with Error
+        // TODO: match implementation with serde_json
         unimplemented!();
     }
 
@@ -180,12 +200,12 @@ impl serde::Serializer for Serializer {
         _variant: &'static str,
         len: usize,
     ) -> Result<Self::SerializeStructVariant> {
+        // TODO: match implementation with serde_json
         self.serialize_map(Some(len))
     }
 }
 
-#[doc(hidden)]
-pub struct SerializeVec {
+pub(crate) struct SerializeVec {
     vec: Vec<Value>,
 }
 
@@ -254,8 +274,7 @@ impl serde::ser::SerializeTupleVariant for SerializeVec {
     }
 }
 
-#[doc(hidden)]
-pub struct SerializeMap {
+pub(crate) struct SerializeMap {
     map: BTreeMap<String, Value>,
     next_key: Option<String>,
 }

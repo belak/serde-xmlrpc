@@ -2,10 +2,10 @@ use std::{collections::BTreeMap, convert::TryFrom};
 
 use iso8601::DateTime;
 
-pub mod de;
-pub mod ser;
+mod de;
+mod ser;
 
-pub use ser::Serializer;
+pub(crate) use ser::Serializer;
 
 /// Convert a `T` into `serde_xmlrpc::Value` which is an enum that can represent
 /// any valid XML-RPC data.
